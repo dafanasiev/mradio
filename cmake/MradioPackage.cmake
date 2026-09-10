@@ -21,6 +21,15 @@ option(MRADIO_WERROR "Treat compiler warnings as errors" OFF)
 # and thread cannot be combined, and this program is worth checking under both.
 set(MRADIO_SANITIZE "" CACHE STRING "Sanitizers to build with, e.g. address,undefined")
 
+# Links the C++ runtime into the binary instead of depending on the system one.
+#
+# This is the cheap half of "make it a static binary" and the half that usually
+# matters: libstdc++ is the dependency most likely to be too old on another
+# machine, while glibc is forward-compatible. The rest of the tree stays
+# dynamic - libmpv cannot be linked statically at all, since the distribution
+# ships no libmpv.a and mpv dlopens its audio outputs at runtime.
+option(MRADIO_STATIC_CXX "Link libstdc++ and libgcc statically" OFF)
+
 # Warnings we hold every package to. -Wconversion and -Wsign-conversion are in
 # deliberately: this codebase converts between volume scales (0..1 vs 0..100),
 # byte counts and durations often enough that silent narrowing is a realistic
@@ -41,6 +50,10 @@ function(mradio_configure_target target)
 
     if(MRADIO_WERROR)
         target_compile_options(${target} PRIVATE -Werror)
+    endif()
+
+    if(MRADIO_STATIC_CXX)
+        target_link_options(${target} PUBLIC -static-libstdc++ -static-libgcc)
     endif()
 
     if(MRADIO_SANITIZE)

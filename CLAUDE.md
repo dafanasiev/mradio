@@ -53,6 +53,27 @@ Both configurations are expected to stay clean, and the suite is run under them
 before anything is called done. (`address` and `thread` cannot be combined -
 that is the sanitizers' limitation, not the Makefile's.)
 
+### Static linking
+
+```bash
+make static_cxx   # -DMRADIO_STATIC_CXX=ON, into build-static-cxx/
+```
+
+This links libstdc++ and libgcc into the binary and stops there, taking it from
+five dynamic dependencies to four and from 1.9 MB to 3.8 MB. That is the half
+of "static" worth having cheaply: libstdc++ is the dependency most likely to be
+too old on another machine, whereas glibc is forward-compatible. The target
+prints what the binary still needs when it finishes.
+
+Going further is not a matter of flags. The distribution ships no `libmpv.a`,
+and libmpv `dlopen`s its audio outputs (`libpulse`, `libpipewire`, `libasound`)
+at runtime, which a fully static binary cannot do; statically linked glibc also
+cannot resolve hostnames, since NSS itself needs `dlopen`. A genuinely static
+build therefore means replacing `packages/audio` with an implementation over
+the ffmpeg static libraries the distribution does ship - which is the reason
+`IAudioEngine` exists, and the reason that change would touch one package and
+no others.
+
 Dependencies, all from apt: `libmpv-dev`, `libsdbus-c++-dev`,
 **`libsdbus-c++-bin`**, `catch2`. The `-bin` package holds the code generator
 and is attached to `-dev` only through `Suggests`, so it has to be named

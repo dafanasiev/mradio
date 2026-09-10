@@ -51,6 +51,24 @@ sanitize_%:
 	@$(CMAKE) --build build-$* -j $(JOBS)
 	@$(CTEST) --test-dir build-$* --output-on-failure -j $(JOBS)
 
+# Links libstdc++ and libgcc into the binary instead of depending on the
+# system ones. That is the cheap and useful half of "static": libstdc++ is the
+# dependency most likely to be too old on another machine, while glibc is
+# forward-compatible.
+#
+# It stops there on purpose. libmpv cannot be linked statically at all - the
+# distribution ships no libmpv.a, and mpv dlopens its audio outputs at runtime,
+# which a statically linked binary cannot do. Going further means dropping
+# libmpv, not adding a flag.
+.PHONY: static_cxx
+static_cxx: ## Build with a static C++ runtime into build-static-cxx/
+	@$(CMAKE) -S . -B build-static-cxx -G $(GENERATOR) $(CMAKE_FLAGS) \
+	    -DMRADIO_STATIC_CXX=ON
+	@$(CMAKE) --build build-static-cxx -j $(JOBS)
+	@echo "build-static-cxx/packages/app/mradio still needs:"
+	@readelf -d build-static-cxx/packages/app/mradio \
+	  | sed -n 's/.*NEEDED.*\[\(.*\)\]/    \1/p'
+
 .PHONY: clean
 clean: ## Remove every build directory
 	@rm -rf $(BUILD_DIR) build-*
