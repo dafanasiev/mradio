@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.canonical.dbusmenu  -  the menu object we EXPORT (adaptor).
+
+  Source: libdbusmenu (Canonical / Ayatana Indicators),
+  libdbusmenu-glib/dbus-menu.xml.
+
+  Two deliberate deviations from the upstream file:
+   1. The Canonical <dox:d> documentation elements and the
+      xmlns:dox declaration are stripped; sdbus-c++-xml2cpp ignores unknown
+      elements, but they make the file unreadable. Their content survives as
+      the XML comments below.
+   2. Upstream puts direction="out" on <signal> arguments. That is invalid
+      D-Bus introspection (signal args have no direction) and it is dropped
+      here. sdbus-c++-xml2cpp tolerates it either way, but `busctl` and
+      other strict parsers do not.
+
+  A menu item is (id, properties). Properties actually used by mradio:
+    type            s   "standard" (default) | "separator"
+    label           s   "__" -> literal "_", a single "_" marks the access key
+    enabled         b   default true
+    visible         b   default true
+    icon-name       s   freedesktop icon name
+    icon-data       ay  raw PNG bytes
+    toggle-type     s   "" (default) | "checkmark" | "radio"
+    toggle-state    i   0 = off, 1 = on, anything else = indeterminate (default -1)
+    children-display s  "submenu" when the item has children
+    disposition     s   "normal" (default) | "informative" | "warning" | "alert"
+    shortcut        aas [["Control","S"]]
+  Only non-default values should be sent, to keep the bus traffic small.
+-->
+<node>
+  <interface name="com.canonical.dbusmenu">
+
+    <!-- ==================== properties ==================== -->
+
+    <!-- dbusmenu protocol version we implement; 3 is what everyone ships -->
+    <property name="Version" type="u" access="read"/>
+
+    <!-- "ltr" | "rtl" -->
+    <property name="TextDirection" type="s" access="read"/>
+
+    <!-- "normal" | "notice" -->
+    <property name="Status" type="s" access="read"/>
+
+    <!-- extra directories to search for icon-name -->
+    <property name="IconThemePath" type="as" access="read"/>
+
+    <!-- ==================== methods ==================== -->
+
+    <!--
+      The important one. The out argument "layout" is the RECURSIVE type
+      (ia{sv}av): (id, properties, children), where every element of the
+      trailing "av" is a variant holding another (ia{sv}av).
+
+      parentId       0 = the menu root
+      recursionDepth -1 = everything below parentId, 0 = no children,
+                     n  = n levels
+      propertyNames  empty = send every property
+    -->
+    <method name="GetLayout">
+      <arg name="parentId" type="i" direction="in"/>
+      <arg name="recursionDepth" type="i" direction="in"/>
+      <arg name="propertyNames" type="as" direction="in"/>
+      <arg name="revision" type="u" direction="out"/>
+      <arg name="layout" type="(ia{sv}av)" direction="out"/>
+    </method>
+
+    <!-- properties of several items at once; empty ids = all items -->
+    <method name="GetGroupProperties">
+      <arg name="ids" type="ai" direction="in"/>
+      <arg name="propertyNames" type="as" direction="in"/>
+      <arg name="properties" type="a(ia{sv})" direction="out"/>
+    </method>
+
+    <!-- single property of a single item; debugging aid, rarely called -->
+    <method name="GetProperty">
+      <arg name="id" type="i" direction="in"/>
+      <arg name="name" type="s" direction="in"/>
+      <arg name="value" type="v" direction="out"/>
+    </method>
+
+    <!-- eventId is "clicked" | "hovered" | "opened" | "closed" -->
+    <method name="Event">
+      <arg name="id" type="i" direction="in"/>
+      <arg name="eventId" type="s" direction="in"/>
+      <arg name="data" type="v" direction="in"/>
+      <arg name="timestamp" type="u" direction="in"/>
+    </method>
+
+    <!-- batched Event: each element is (id, eventId, data, timestamp) -->
+    <method name="EventGroup">
+      <arg name="events" type="a(isvu)" direction="in"/>
+      <arg name="idErrors" type="ai" direction="out"/>
+    </method>
+
+    <!-- return true if the layout changed and the host must re-read it -->
+    <method name="AboutToShow">
+      <arg name="id" type="i" direction="in"/>
+      <arg name="needUpdate" type="b" direction="out"/>
+    </method>
+
+    <!-- batched AboutToShow: two separate out arrays -->
+    <method name="AboutToShowGroup">
+      <arg name="ids" type="ai" direction="in"/>
+      <arg name="updatesNeeded" type="ai" direction="out"/>
+      <arg name="idErrors" type="ai" direction="out"/>
+    </method>
+
+    <!-- ==================== signals ==================== -->
+
+    <!-- batched property changes: (changed items, removed property names) -->
+    <signal name="ItemsPropertiesUpdated">
+      <arg name="updatedProps" type="a(ia{sv})"/>
+      <arg name="removedProps" type="a(ias)"/>
+    </signal>
+
+    <!-- parent == 0 means the whole layout is invalid -->
+    <signal name="LayoutUpdated">
+      <arg name="revision" type="u"/>
+      <arg name="parent" type="i"/>
+    </signal>
+
+    <!-- ask the host to pop this menu open (e.g. from a global hotkey) -->
+    <signal name="ItemActivationRequested">
+      <arg name="id" type="i"/>
+      <arg name="timestamp" type="u"/>
+    </signal>
+
+  </interface>
+</node>

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=mradio
+Comment=Internet radio in the system tray
+Exec=mradio
+Icon=multimedia-player
+Categories=AudioVideo;Audio;Player;
+Terminal=false
+# The program has no window of its own; it lives in the tray.
+NoDisplay=false
+X-GNOME-UsesNotifications=false

@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+
+<!--
+  MPRIS 2.2 introspection data for mradio, used to generate sdbus-c++ adaptors.
+
+  Source of truth: the freedesktop MPRIS specification, spec/org.mpris.MediaPlayer2.xml
+  and spec/org.mpris.MediaPlayer2.Player.xml (rendered at
+  https://specifications.freedesktop.org/mpris-spec/latest/). Names, D-Bus signatures,
+  argument directions and EmitsChangedSignal annotations below are taken verbatim from
+  those files; only the tp: docstrings were dropped and mradio-specific commentary added.
+
+  Exported on the object path /org/mpris/MediaPlayer2 under the well-known bus name
+  org.mpris.MediaPlayer2.mradio.
+-->
+<node>
+
+  <!--
+    Root interface. The spec annotates the whole interface with
+    EmitsChangedSignal="true"; it is repeated per property here so that the generated
+    adaptor carries the flag on every property registration explicitly.
+  -->
+  <interface name="org.mpris.MediaPlayer2">
+
+    <!--
+      mradio is headless (tray icon only, no window), so CanRaise is false and Raise()
+      is a no-op. The method must still exist: the spec makes it mandatory regardless of
+      CanRaise, and clients call it unconditionally.
+    -->
+    <method name="Raise"/>
+
+    <!-- Backs the "Quit" entry in the tray menu; CanQuit is true. -->
+    <method name="Quit"/>
+
+    <property name="CanQuit" type="b" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
+    </property>
+
+    <property name="CanRaise" type="b" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
+    </property>
+
+    <!-- false: the org.mpris.MediaPlayer2.TrackList interface is not implemented. -->
+    <property name="HasTrackList" type="b" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
+    </property>
+
+    <property name="Identity" type="s" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
+    </property>
+
+    <property name="DesktopEntry" type="s" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
+    </property>
+
+    <property name="SupportedUriSchemes" type="as" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
+    </property>
+
+    <property name="SupportedMimeTypes" type="as" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
+    </property>
+
+  </interface>
+
+  <!--
+    Player interface. Unlike the root interface the spec puts EmitsChangedSignal on each
+    property individually, and two of them are deliberately "false": Position (it moves
+    continuously and is polled, never signalled) and CanControl (constant for the
+    lifetime of the object).
+  -->
+  <interface name="org.mpris.MediaPlayer2.Player">
+
+    <!-- For mradio these step through the station list rather than through a tracklist. -->
+    <method name="Next"/>
+    <method name="Previous"/>
+
+    <method name="Pause"/>
+    <method name="PlayPause"/>
+    <method name="Stop"/>
+    <method name="Play"/>
+
+    <!--
+      Live streams cannot be seeked: CanSeek is false, so per the spec Seek() and
+      SetPosition() are no-ops. Both stay in the interface because the spec requires
+      them to be present.
+    -->
+    <method name="Seek">
+      <arg name="Offset" type="x" direction="in"/>
+    </method>
+
+    <method name="SetPosition">
+      <arg name="TrackId" type="o" direction="in"/>
+      <arg name="Position" type="x" direction="in"/>
+    </method>
+
+    <method name="OpenUri">
+      <arg name="Uri" type="s" direction="in"/>
+    </method>
+
+    <!--
+      Never emitted by mradio (there is nothing to seek), but the signal is mandatory
+      and generating it keeps the adaptor able to emit it should that change.
+    -->
+    <signal name="Seeked">
+      <arg name="Position" type="x"/>
+    </signal>
+
+    <!-- "Playing" | "Paused" | "Stopped" -->
+    <property name="PlaybackStatus" type="s" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
+    </property>
+
+    <!--
+      LoopStatus and Shuffle are optional in the spec and meaningless for a live
+      stream, so they are left out; clients are required to cope with absence.
+    -->
+
+    <!-- Always 1.0 for a live stream; writes of any other value are rejected. -->
+    <property name="Rate" type="d" access="readwrite">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
+    </property>
+
+    <!-- a{sv}: mpris:trackid (o), xesam:title, xesam:artist (as), xesam:url, ... -->
+    <property name="Metadata" type="a{sv}" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
+    </property>
+
+    <!-- 0.0 .. 1.0, writable: the volume is settable over MPRIS. -->
+    <property name="Volume" type="d" access="readwrite">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
+    </property>
+
+    <!--
+      Microseconds. Always 0 for mradio. EmitsChangedSignal is "false" as mandated by
+      the spec: a running position must not be broadcast on PropertiesChanged.
+    -->
+    <property name="Position" type="x" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="false"/>
+    </property>
+
+    <!-- Both 1.0: no rate control on a live stream. -->
+    <property name="MinimumRate" type="d" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
+    </property>
+
+    <property name="MaximumRate" type="d" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
+    </property>
+
+    <property name="CanGoNext" type="b" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
+    </property>
+
+    <property name="CanGoPrevious" type="b" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
+    </property>
+
+    <property name="CanPlay" type="b" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
+    </property>
+
+    <property name="CanPause" type="b" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
+    </property>
+
+    <!-- false: streams are not seekable. -->
+    <property name="CanSeek" type="b" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
+    </property>
+
+    <!--
+      Constant, hence EmitsChangedSignal "false" per the spec. mradio reports true:
+      the player does accept control from clients.
+    -->
+    <property name="CanControl" type="b" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="false"/>
+    </property>
+
+  </interface>
+
+</node>

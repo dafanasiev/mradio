@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  org.kde.StatusNotifierItem  -  the tray icon object we EXPORT (adaptor).
+
+  Source: KDE Frameworks "kstatusnotifieritem", src/org.kde.StatusNotifierItem.xml
+  (the de-facto reference implementation of the freedesktop StatusNotifierItem
+  specification, also honoured by Ayatana AppIndicator / libappindicator).
+
+  Qt-specific <annotation name="org.qtproject.QtDBus.QtTypeName*"/> elements from
+  the upstream file are dropped: they only steer Qt's qdbusxml2cpp and are
+  meaningless for sdbus-c++-xml2cpp.
+-->
+<node>
+  <interface name="org.kde.StatusNotifierItem">
+
+    <!-- ==================== properties ==================== -->
+
+    <!-- "ApplicationStatus" | "Communications" | "SystemServices" | "Hardware" -->
+    <property name="Category" type="s" access="read"/>
+
+    <!-- unique, non-localised application id, e.g. "mradio" -->
+    <property name="Id" type="s" access="read"/>
+
+    <!-- localised, user visible name of the application -->
+    <property name="Title" type="s" access="read"/>
+
+    <!-- "Passive" | "Active" | "NeedsAttention" -->
+    <property name="Status" type="s" access="read"/>
+
+    <!-- X11 window id of the main window, 0 for a windowless daemon like ours -->
+    <property name="WindowId" type="i" access="read"/>
+
+    <!-- extra directory prepended to the icon theme search path -->
+    <property name="IconThemePath" type="s" access="read"/>
+
+    <!-- object path of the com.canonical.dbusmenu object serving our menu -->
+    <property name="Menu" type="o" access="read"/>
+
+    <!-- true => the host should only ever pop up Menu, never call Activate -->
+    <property name="ItemIsMenu" type="b" access="read"/>
+
+    <!-- main icon: name is preferred, pixmap is the fallback -->
+    <property name="IconName" type="s" access="read"/>
+    <!-- a(iiay): array of (width, height, ARGB32 big-endian pixel data) -->
+    <property name="IconPixmap" type="a(iiay)" access="read"/>
+
+    <!-- small overlay badge drawn on top of the main icon -->
+    <property name="OverlayIconName" type="s" access="read"/>
+    <property name="OverlayIconPixmap" type="a(iiay)" access="read"/>
+
+    <!-- icon used while Status == "NeedsAttention" -->
+    <property name="AttentionIconName" type="s" access="read"/>
+    <property name="AttentionIconPixmap" type="a(iiay)" access="read"/>
+    <property name="AttentionMovieName" type="s" access="read"/>
+
+    <!-- (icon name, icon pixmaps, title, descriptive text) -->
+    <property name="ToolTip" type="(sa(iiay)ss)" access="read"/>
+
+    <!-- ==================== methods ==================== -->
+
+    <!-- host asks us to show our own context menu at screen (x, y) -->
+    <method name="ContextMenu">
+      <arg name="x" type="i" direction="in"/>
+      <arg name="y" type="i" direction="in"/>
+    </method>
+
+    <!-- primary activation, usually left click -->
+    <method name="Activate">
+      <arg name="x" type="i" direction="in"/>
+      <arg name="y" type="i" direction="in"/>
+    </method>
+
+    <!-- secondary activation, usually middle click -->
+    <method name="SecondaryActivate">
+      <arg name="x" type="i" direction="in"/>
+      <arg name="y" type="i" direction="in"/>
+    </method>
+
+    <!-- mouse wheel over the icon; orientation is "vertical" or "horizontal".
+         This is what we hook the volume control onto. -->
+    <method name="Scroll">
+      <arg name="delta" type="i" direction="in"/>
+      <arg name="orientation" type="s" direction="in"/>
+    </method>
+
+    <!-- Wayland xdg-activation token handed to us before Activate/ContextMenu -->
+    <method name="ProvideXdgActivationToken">
+      <arg name="token" type="s" direction="in"/>
+    </method>
+
+    <!-- ==================== signals ==================== -->
+    <!-- All of these are "property X changed, re-read it" pokes. -->
+
+    <signal name="NewTitle"/>
+    <signal name="NewIcon"/>
+    <signal name="NewAttentionIcon"/>
+    <signal name="NewOverlayIcon"/>
+    <signal name="NewToolTip"/>
+    <signal name="NewMenu"/>
+
+    <signal name="NewStatus">
+      <arg name="status" type="s"/>
+    </signal>
+
+  </interface>
+</node>

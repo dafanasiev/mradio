@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  org.kde.StatusNotifierWatcher  -  a FOREIGN object we CALL (proxy).
+
+  Lives on the session bus at service org.kde.StatusNotifierWatcher,
+  object path /StatusNotifierWatcher, and is provided by the desktop shell
+  (KDE Plasma's systemtray, xembed-sni-proxy, snixembed, waybar, ...).
+  We only need it to hand it our own bus name via RegisterStatusNotifierItem.
+
+  Source: KDE Frameworks "kstatusnotifieritem", src/org.kde.StatusNotifierWatcher.xml
+  Qt-only QtTypeName annotations dropped (see status_notifier_item.xml).
+-->
+<node>
+  <interface name="org.kde.StatusNotifierWatcher">
+
+    <!-- ==================== methods ==================== -->
+
+    <!-- "service" is either a bus name ("org.kde.StatusNotifierItem-1234-1"
+         or our unique name ":1.42") or an object path. Passing the unique
+         connection name is the widely supported form. -->
+    <method name="RegisterStatusNotifierItem">
+      <arg name="service" type="s" direction="in"/>
+    </method>
+
+    <!-- Only a tray host (the shell) calls this. We keep it so the generated
+         proxy can be reused for diagnostics; mradio never calls it. -->
+    <method name="RegisterStatusNotifierHost">
+      <arg name="service" type="s" direction="in"/>
+    </method>
+
+    <!-- ==================== properties ==================== -->
+
+    <property name="RegisteredStatusNotifierItems" type="as" access="read"/>
+
+    <!-- false => nothing will draw our icon; useful to warn the user -->
+    <property name="IsStatusNotifierHostRegistered" type="b" access="read"/>
+
+    <!-- always 0 so far -->
+    <property name="ProtocolVersion" type="i" access="read"/>
+
+    <!-- ==================== signals ==================== -->
+
+    <signal name="StatusNotifierItemRegistered">
+      <arg name="service" type="s"/>
+    </signal>
+
+    <signal name="StatusNotifierItemUnregistered">
+      <arg name="service" type="s"/>
+    </signal>
+
+    <!-- a host appeared: this is our cue to (re-)register -->
+    <signal name="StatusNotifierHostRegistered"/>
+
+    <signal name="StatusNotifierHostUnregistered"/>
+
+  </interface>
+</node>
