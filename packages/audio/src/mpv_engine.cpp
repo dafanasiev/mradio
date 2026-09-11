@@ -2,7 +2,9 @@
 
 #include <mpv/client.h>
 
+#include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -86,10 +88,27 @@ core::Result<std::unique_ptr<MpvEngine>> MpvEngine::create(MpvOptions options)
     set("idle", "yes");          // stay alive with nothing loaded
     set("keep-open", "no");
 
-    // Radio streams drop. Letting ffmpeg reconnect underneath us is far cheaper
-    // than a retry loop up here, and it keeps a "reconnecting" case out of the
-    // state machine entirely.
-    set("stream-lavf-o", "reconnect=1,reconnect_streamed=1,reconnect_delay_max=5");
+    // Radio streams drop: the network blinks, the server restarts, a proxy cuts
+    // a connection it thinks is idle. Most of that is ffmpeg's HTTP layer
+    // reconnecting underneath us and never reaches this class at all.
+    //
+    // The retry count is deliberately small. ffmpeg's own reconnecting is
+    // invisible from up here - no event, no property, nothing to report - so
+    // the longer it goes on, the longer the program has nothing to say for
+    // itself. A handful of quick attempts inside ffmpeg, and then the failure
+    // comes to us as an end-of-file error and RetryPolicy takes over on a
+    // delay we control and a state the views can see.
+    //
+    // mpv ignores keys a given ffmpeg build does not have, so naming the
+    // newer options costs nothing on an older one.
+    set("stream-lavf-o",
+        "reconnect=1,"
+        "reconnect_at_eof=1,"            // for a live stream, EOF *is* a drop
+        "reconnect_streamed=1,"          // ...and it is never seekable
+        "reconnect_on_network_error=1,"
+        "reconnect_max_retries=3,"
+        "reconnect_delay_max=5,"
+        "reconnect_delay_total_max=20");
 
     const std::string timeout = std::to_string(options.network_timeout_seconds);
     set("network-timeout", timeout.c_str());
@@ -110,12 +129,15 @@ core::Result<std::unique_ptr<MpvEngine>> MpvEngine::create(MpvOptions options)
     mpv_observe_property(handle, kMetadata, "metadata", MPV_FORMAT_NODE);
 
     // Private constructor, so make_unique is not an option here.
-    std::unique_ptr<MpvEngine> engine{new MpvEngine{handle}};
+    std::unique_ptr<MpvEngine> engine{new MpvEngine{handle, std::move(options)}};
     engine->event_thread_ = std::thread{[raw = engine.get()] { raw->run_event_loop(); }};
     return engine;
 }
 
-MpvEngine::MpvEngine(mpv_handle* handle) : handle_(handle) {}
+MpvEngine::MpvEngine(mpv_handle* handle, MpvOptions options)
+    : handle_(handle), options_(std::move(options))
+{
+}
 
 MpvEngine::~MpvEngine()
 {
@@ -133,11 +155,14 @@ MpvEngine::~MpvEngine()
 void MpvEngine::run_event_loop()
 {
     while (!stopping_.load(std::memory_order_relaxed)) {
-        mpv_event* const event = mpv_wait_event(handle_, -1.0);
+        // A pending retry is the only thing this loop has to wake up for on
+        // its own, which is why the delay lives here instead of in a timer
+        // thread of its own.
+        mpv_event* const event = mpv_wait_event(handle_, retry_wait_seconds());
 
         switch (event->event_id) {
             case MPV_EVENT_NONE:
-                break;  // woken by the destructor
+                break;  // the retry delay ran out, or the destructor woke us
             case MPV_EVENT_SHUTDOWN:
                 return;
             case MPV_EVENT_PROPERTY_CHANGE:
@@ -149,6 +174,8 @@ void MpvEngine::run_event_loop()
             default:
                 break;
         }
+
+        retry_if_due();
     }
 }
 
@@ -167,6 +194,9 @@ void MpvEngine::handle_property_change(void* event_data)
         switch (event->reply_userdata) {
             case kIdleActive:
                 idle_active_ = flag_of(property->data);
+                if (!idle_active_) {
+                    loading_ = false;  // mpv really has the stream now
+                }
                 break;
             case kCoreIdle:
                 core_idle_ = flag_of(property->data);
@@ -186,6 +216,13 @@ void MpvEngine::handle_property_change(void* event_data)
             default:
                 break;
         }
+
+        // Audio is flowing: whatever went wrong before is over, and the next
+        // drop deserves the full retry budget rather than the remains of the
+        // last one.
+        if (derive_state() == PlayerState::playing) {
+            retry_attempts_ = 0;
+        }
     }
 
     republish();
@@ -196,21 +233,108 @@ void MpvEngine::handle_end_file(void* event_data)
     const auto* const event = static_cast<const mpv_event*>(event_data);
     const auto* const end = static_cast<const mpv_event_end_file*>(event->data);
 
-    if (end->reason == MPV_END_FILE_REASON_ERROR) {
+    if (end->reason != MPV_END_FILE_REASON_ERROR) {
+        republish();
+        return;
+    }
+
+    {
         const std::lock_guard lock{mutex_};
-        failed_ = true;
-        last_error_ = backend_error(end->error, "playback failed");
+        const core::Error error = backend_error(end->error, "playback failed");
+
+        // stop() got there first, so this error belongs to a stream nobody is
+        // waiting for any more. Reporting it would leave a player the user
+        // deliberately stopped sitting in the failed state.
+        if (status_.url.empty()) {
+            loading_ = false;
+            retry_at_.reset();
+        }
+        // Still on a station, and the budget is not spent: keep the
+        // "connecting" face and come back to it after the delay. The user
+        // clicked this station and has not asked for anything else, so the
+        // tray keeps its play glyph and nothing reports a failure yet.
+        else if (retry_attempts_ < options_.retry.max_attempts) {
+            ++retry_attempts_;
+            loading_ = true;
+            failed_ = false;
+            last_error_ = error;
+            retry_at_ = std::chrono::steady_clock::now() + retry_delay(retry_attempts_);
+        }
+        else {
+            loading_ = false;
+            failed_ = true;
+            retry_at_.reset();
+            last_error_ =
+                retry_attempts_ > 0
+                    ? core::make_error(error.code,
+                                       error.message + " (gave up after "
+                                           + std::to_string(retry_attempts_) + " attempts)")
+                    : error;
+        }
     }
 
     republish();
 }
 
+std::chrono::milliseconds MpvEngine::retry_delay(int attempt) const
+{
+    std::chrono::milliseconds delay = options_.retry.first_delay;
+    for (int i = 1; i < attempt && delay < options_.retry.max_delay; ++i) {
+        delay *= 2;
+    }
+    return std::min(delay, options_.retry.max_delay);
+}
+
+double MpvEngine::retry_wait_seconds() const
+{
+    const std::lock_guard lock{mutex_};
+    if (!retry_at_.has_value()) {
+        return -1.0;  // nothing pending: block until mpv has something to say
+    }
+
+    const auto remaining = *retry_at_ - std::chrono::steady_clock::now();
+    if (remaining <= std::chrono::steady_clock::duration::zero()) {
+        return 0.0;
+    }
+    return std::chrono::duration<double>(remaining).count();
+}
+
+void MpvEngine::retry_if_due()
+{
+    if (stopping_.load(std::memory_order_relaxed)) {
+        return;  // teardown woke us, not the delay
+    }
+
+    std::string url;
+    {
+        const std::lock_guard lock{mutex_};
+        if (!retry_at_.has_value() || std::chrono::steady_clock::now() < *retry_at_) {
+            return;
+        }
+        retry_at_.reset();
+        url = status_.url;
+    }
+
+    if (url.empty()) {
+        return;  // stopped while the delay was running
+    }
+
+    // A failure here is already published by issue_loadfile; there is no one
+    // to hand a return value to on this thread.
+    static_cast<void>(issue_loadfile(url));
+}
+
 core::PlayerState MpvEngine::derive_state() const
 {
-    // Order matters: a failed stream also leaves mpv idle, so the sticky
-    // failure has to win over idle_active_.
+    // Order matters. A failed stream also leaves mpv idle, so the sticky
+    // failure has to win over idle_active_; and a loadfile that has been
+    // issued but not yet picked up - the first attempt, or one between
+    // retries - leaves mpv idle too, while the station is very much on.
     if (failed_) {
         return PlayerState::failed;
+    }
+    if (loading_) {
+        return PlayerState::connecting;
     }
     if (idle_active_) {
         return PlayerState::idle;
@@ -256,20 +380,35 @@ core::Status MpvEngine::play(std::string_view url)
 
     {
         const std::lock_guard lock{mutex_};
+        loading_ = true;
         failed_ = false;
         last_error_ = {};
+        retry_attempts_ = 0;
+        retry_at_.reset();
         status_.url = target;
         status_.track = {};
     }
 
+    return issue_loadfile(target);
+}
+
+core::Status MpvEngine::issue_loadfile(const std::string& url)
+{
     // "replace" is mpv's default; spelling it out documents that selecting a
     // station abandons the previous one rather than queueing behind it.
-    std::array<const char*, 4> command{"loadfile", target.c_str(), "replace", nullptr};
+    std::array<const char*, 4> command{"loadfile", url.c_str(), "replace", nullptr};
+
     if (const int rc = mpv_command(handle_, command.data()); rc < 0) {
-        const std::lock_guard lock{mutex_};
-        failed_ = true;
-        last_error_ = backend_error(rc, "cannot start " + target);
-        return std::unexpected(last_error_);
+        const core::Error error = backend_error(rc, "cannot start " + url);
+        {
+            const std::lock_guard lock{mutex_};
+            loading_ = false;
+            failed_ = true;
+            retry_at_.reset();
+            last_error_ = error;
+        }
+        republish();
+        return std::unexpected(error);
     }
 
     republish();
@@ -285,8 +424,11 @@ void MpvEngine::stop()
         const std::lock_guard lock{mutex_};
         status_.url.clear();
         status_.track = {};
+        loading_ = false;
         failed_ = false;
         last_error_ = {};
+        retry_attempts_ = 0;
+        retry_at_.reset();
     }
 
     republish();

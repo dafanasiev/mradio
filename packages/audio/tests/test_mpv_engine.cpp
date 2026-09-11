@@ -5,17 +5,22 @@
 
 #include <unistd.h>  // getpid, for a temp directory name unique to this run
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <string>
+#include <thread>
+#include <vector>
 
 using mradio::audio::MpvEngine;
 using mradio::audio::MpvOptions;
+using mradio::audio::RetryPolicy;
 using mradio::core::PlaybackStatus;
 using mradio::core::PlayerState;
 using mradio::core::Volume;
@@ -31,7 +36,15 @@ constexpr auto kTimeout = 20s;
 MpvOptions test_options()
 {
     // "null" is what makes this runnable on a machine with no audio hardware.
-    return MpvOptions{.audio_output = "null", .network_timeout_seconds = 5};
+    //
+    // Retrying is off: the failure tests below want the failure now rather
+    // than in a minute. The retry policy has a test of its own, with delays
+    // measured in milliseconds.
+    return MpvOptions{
+        .audio_output = "null",
+        .network_timeout_seconds = 5,
+        .retry = RetryPolicy{.max_attempts = 0},
+    };
 }
 
 class TempDir {
@@ -125,6 +138,7 @@ public:
         {
             const std::lock_guard lock{mutex_};
             latest_ = status;
+            seen_.push_back(status.state);
         }
         changed_.notify_all();
     }
@@ -136,10 +150,20 @@ public:
         return changed_.wait_for(lock, kTimeout, [&] { return predicate(latest_); });
     }
 
+    // How many snapshots carried this state. Counted rather than compared as a
+    // sequence: mpv publishes several snapshots per attempt, and how many is
+    // not something a test should pin down.
+    [[nodiscard]] std::size_t times_seen(PlayerState state)
+    {
+        const std::lock_guard lock{mutex_};
+        return static_cast<std::size_t>(std::count(seen_.begin(), seen_.end(), state));
+    }
+
 private:
     std::mutex mutex_;
     std::condition_variable changed_;
     PlaybackStatus latest_;
+    std::vector<PlayerState> seen_;
 };
 
 }  // namespace
@@ -209,6 +233,67 @@ TEST_CASE("volume and mute round-trip through mpv", "[audio]")
 
     engine->set_muted(false);
     REQUIRE(waiter.wait_until([](const PlaybackStatus& s) { return !s.muted; }));
+
+    engine->set_listener(nullptr);
+}
+
+TEST_CASE("a broken stream is retried before it is given up on", "[audio]")
+{
+    const TempDir dir;
+
+    StatusWaiter waiter;
+
+    MpvOptions options = test_options();
+    options.retry = RetryPolicy{.max_attempts = 2, .first_delay = 20ms, .max_delay = 20ms};
+
+    auto created = MpvEngine::create(options);
+    REQUIRE(created.has_value());
+    const std::unique_ptr<MpvEngine>& engine = *created;
+    engine->set_listener(&waiter);
+
+    // Fails the same way a dead stream URL does, only without the wait.
+    REQUIRE(engine->play((dir.path() / "absent.mp3").string()).has_value());
+
+    REQUIRE(waiter.wait_until([](const PlaybackStatus& s) { return s.state == PlayerState::failed; }));
+
+    // Three attempts: the first one and two retries. Each of them reports
+    // itself as connecting, so the tray keeps the station marked as on and
+    // nothing in the UI flickers through "failed" on the way.
+    CHECK(waiter.times_seen(PlayerState::connecting) >= 3);
+
+    // The message says the retries happened, which is the difference between
+    // a station that is down and one whose URL is wrong.
+    CHECK(engine->status().error.message.find("2 attempts") != std::string::npos);
+
+    engine->set_listener(nullptr);
+}
+
+TEST_CASE("retrying is not attempted after stop", "[audio]")
+{
+    const TempDir dir;
+
+    StatusWaiter waiter;
+
+    MpvOptions options = test_options();
+    options.retry = RetryPolicy{.max_attempts = 20, .first_delay = 30ms, .max_delay = 30ms};
+
+    auto created = MpvEngine::create(options);
+    REQUIRE(created.has_value());
+    const std::unique_ptr<MpvEngine>& engine = *created;
+    engine->set_listener(&waiter);
+
+    REQUIRE(engine->play((dir.path() / "absent.mp3").string()).has_value());
+
+    // Stop lands while a retry is pending, which must drop it: the user asked
+    // for silence, not for twenty more attempts.
+    engine->stop();
+
+    REQUIRE(waiter.wait_until([](const PlaybackStatus& s) { return s.state == PlayerState::idle; }));
+
+    std::this_thread::sleep_for(150ms);  // several retry delays' worth
+
+    CHECK(engine->status().state == PlayerState::idle);
+    CHECK(engine->status().url.empty());
 
     engine->set_listener(nullptr);
 }

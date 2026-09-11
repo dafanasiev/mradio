@@ -147,6 +147,17 @@ what lets the mpv thread publish `PropertiesChanged` directly.
   `PlayPause` onto play-or-stop.
 - **Nothing is remembered.** Not favourites, not the last station, not the
   volume. `stop()` clears the current station outright.
+- **A drop is retried, a wrong URL is not - for long.** ffmpeg reconnects
+  underneath mpv (the `stream-lavf-o` options in `MpvEngine::create`), and it
+  is kept on a short leash there on purpose: its reconnecting is invisible from
+  our side. What it cannot paper over arrives as an mpv end-of-file error, and
+  `MpvEngine` then re-issues `loadfile` on a doubling delay while reporting
+  `connecting`, so the tray keeps its `▶` and MPRIS keeps saying `Playing`.
+  `RetryPolicy::max_attempts` is a budget per stretch of bad luck, not per
+  station: it is restored the moment audio flows again, which is what retries a
+  flaky connection indefinitely while giving up on a dead URL in about two
+  minutes. libmpv reports no HTTP status, so "temporarily down" and "gone for
+  good" cannot be told apart any other way. The tests set it to 0.
 - `emitPropertiesChangedSignal` **throws and drops the whole batch** if any
   named property is declared `EmitsChangedSignal="false"`. For MPRIS that means
   `Position` and `CanControl` must never appear in the list.
