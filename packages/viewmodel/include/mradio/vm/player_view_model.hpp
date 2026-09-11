@@ -91,10 +91,6 @@ public:
 
     void set_volume(core::Volume volume);
 
-    // Shifts the volume by `delta` in normalised units - what the tray calls
-    // when the wheel turns over the icon.
-    void adjust_volume(double delta);
-
     void set_muted(bool muted);
 
     // ---- binding ----

@@ -28,15 +28,6 @@ constexpr const char* kWatcherPath = "/StatusNotifierWatcher";
 // This is the one line to change for a different look in the panel.
 constexpr const char* kIconName = "multimedia-player";
 
-// Hosts report a wheel notch as 120, following the X11 convention.
-constexpr int kScrollNotch = 120;
-
-// How far one notch moves the volume, and how many notches a single event may
-// be worth: a host that reports an accumulated delta must not be able to go
-// from silent to full in one turn of the wheel.
-constexpr double kVolumeStep = 0.05;
-constexpr int kMaxNotchesPerEvent = 5;
-
 // The recursive dbusmenu layout type, (ia{sv}av). The recursion closes through
 // type erasure: every child is a Variant that again holds one of these.
 using MenuItem = sdbus::Struct<std::int32_t,
@@ -276,22 +267,10 @@ private:
         view_model_.toggle_play_stop();
     }
 
-    void Scroll(const std::int32_t& delta, const std::string& orientation) override
-    {
-        if (orientation != "vertical" || delta == 0) {
-            return;
-        }
-
-        // Most hosts send 120 per notch, but not all of them do; anything
-        // smaller still counts as a single notch rather than as nothing.
-        int notches = delta / kScrollNotch;
-        if (notches == 0) {
-            notches = (delta > 0) ? 1 : -1;
-        }
-        notches = std::clamp(notches, -kMaxNotchesPerEvent, kMaxNotchesPerEvent);
-
-        view_model_.adjust_volume(static_cast<double>(notches) * kVolumeStep);
-    }
+    // The wheel is deliberately unbound. Hosts disagree about whether they
+    // deliver this event at all and about what a delta means, so the volume is
+    // left to the mixer and to MPRIS, which every panel already drives.
+    void Scroll(const std::int32_t& /*delta*/, const std::string& /*orientation*/) override {}
 
     void ProvideXdgActivationToken(const std::string& /*token*/) override {}
 

@@ -32,12 +32,3 @@ TEST_CASE("percent and normalised are two views of one value", "[volume]")
     CHECK(Volume{0.75}.percent() == Catch::Approx(75.0));
     CHECK(Volume::from_percent(140.0).percent() == Catch::Approx(100.0));
 }
-
-TEST_CASE("adjusting stays inside the range", "[volume]")
-{
-    // This is the tray's scroll handler: repeated nudges must saturate rather
-    // than drift out of range.
-    CHECK(Volume{0.5}.adjusted(0.05).normalised() == Catch::Approx(0.55));
-    CHECK(Volume{0.98}.adjusted(0.05).normalised() == Catch::Approx(1.0));
-    CHECK(Volume{0.02}.adjusted(-0.05).normalised() == Catch::Approx(0.0));
-}

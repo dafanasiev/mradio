@@ -4,9 +4,9 @@ Internet radio player for Linux. No window: it lives in the system tray and is
 driven from the tray menu or over D-Bus.
 
 Pick a station from the menu and it plays, with a `▶` in front of its name.
-The menu also has **Стоп** and **Выйти**. The wheel over the tray icon changes
-the volume. MPRIS is published, so media keys, panel applets and `playerctl`
-work without knowing anything about mradio.
+The menu also has **Стоп** and **Выйти**. MPRIS is published, so media keys,
+panel applets and `playerctl` work without knowing anything about mradio -
+including the volume, which mradio itself offers no gesture for.
 
 There is no configuration file and no saved state. The only thing read is
 `$XDG_CONFIG_HOME/mradio/playlist.m3u` (falling back to

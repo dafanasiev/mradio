@@ -263,19 +263,17 @@ TEST_CASE("the play/stop toggle does nothing with an empty playlist", "[viewmode
     CHECK_FALSE(model.view_state().station.has_value());
 }
 
-TEST_CASE("scrolling adjusts the volume from its current value and saturates", "[viewmodel]")
+TEST_CASE("the volume goes through to the engine and back into the view state", "[viewmodel]")
 {
     FakeEngine engine;
     PlayerViewModel model{three_stations(), engine};
 
     model.set_volume(Volume{0.50});
-    model.adjust_volume(0.05);
-    CHECK(model.view_state().volume.normalised() == Catch::Approx(0.55));
+    CHECK(model.view_state().volume.normalised() == Catch::Approx(0.50));
 
-    model.adjust_volume(-0.60);
-    CHECK(model.view_state().volume.normalised() == Catch::Approx(0.0));
-
-    model.adjust_volume(2.0);
+    // Clamping belongs to Volume itself; this only pins down that the value
+    // the engine reports is the one the views see.
+    model.set_volume(Volume{2.0});
     CHECK(model.view_state().volume.normalised() == Catch::Approx(1.0));
 }
 

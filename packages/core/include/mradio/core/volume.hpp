@@ -6,11 +6,10 @@ namespace mradio::core {
 
 // Playback volume, normalised to [0, 1] and clamped on construction.
 //
-// The normalisation is the point of this type. MPRIS speaks 0..1, mpv speaks
-// 0..100, and the tray adjusts by percentage-point steps on a scroll event;
-// with three scales in play a bare double is a standing invitation to a
-// hundredfold bug. Conversions happen only at the edges, through the named
-// accessors below.
+// The normalisation is the point of this type. MPRIS speaks 0..1 and mpv
+// speaks 0..100; with two scales in play a bare double is a standing
+// invitation to a hundredfold bug. Conversions happen only at the edges,
+// through the named accessors below.
 class Volume {
 public:
     constexpr Volume() noexcept = default;
@@ -29,13 +28,6 @@ public:
     [[nodiscard]] constexpr double percent() const noexcept { return value_ * 100.0; }
 
     [[nodiscard]] constexpr bool is_silent() const noexcept { return value_ <= 0.0; }
-
-    // Returns this volume shifted by `delta` (in normalised units), clamped.
-    // Used by the tray's scroll handler, which nudges by a fixed step.
-    [[nodiscard]] constexpr Volume adjusted(double delta) const noexcept
-    {
-        return Volume{value_ + delta};
-    }
 
     friend constexpr bool operator==(const Volume&, const Volume&) = default;
     friend constexpr auto operator<=>(const Volume&, const Volume&) = default;

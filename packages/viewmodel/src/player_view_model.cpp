@@ -175,16 +175,6 @@ void PlayerViewModel::set_volume(core::Volume volume)
     engine_.set_volume(volume);
 }
 
-void PlayerViewModel::adjust_volume(double delta)
-{
-    core::Volume current;
-    {
-        const std::lock_guard lock{mutex_};
-        current = playback_.volume;
-    }
-    engine_.set_volume(current.adjusted(delta));
-}
-
 void PlayerViewModel::set_muted(bool muted)
 {
     engine_.set_muted(muted);
