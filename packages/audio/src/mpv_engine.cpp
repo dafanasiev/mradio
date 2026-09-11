@@ -88,6 +88,32 @@ core::Result<std::unique_ptr<MpvEngine>> MpvEngine::create(MpvOptions options)
     set("idle", "yes");          // stay alive with nothing loaded
     set("keep-open", "no");
 
+    // Nothing in ~/.config/mpv may reach this program. A stray mpv.conf with
+    // an audio filter, a volume-max or a different --ao in it would silently
+    // become ours, and there would be nothing in mradio to explain why.
+    set("config", "no");
+
+    // libmpv comes up with mpv's built-in Lua scripts running - the OSD
+    // console, the stats overlay, the youtube-dl hook, the select, positioning
+    // and context menus - each on a thread of its own. This program has no
+    // OSD, no key bindings and no video site to resolve, so that is a Lua
+    // runtime and half a dozen threads bought for nothing.
+    //
+    // There is no single switch for them: each built-in has its own, and
+    // mpv_set_option_string simply refuses a name a given build does not know,
+    // which is why listing options that may not exist yet is safe.
+    for (const char* const script : {"load-scripts",
+                                     "load-osd-console",
+                                     "load-stats-overlay",
+                                     "load-auto-profiles",
+                                     "load-select",
+                                     "load-positioning",
+                                     "load-commands",
+                                     "load-context-menu",
+                                     "ytdl"}) {
+        set(script, "no");
+    }
+
     // Radio streams drop: the network blinks, the server restarts, a proxy cuts
     // a connection it thinks is idle. Most of that is ffmpeg's HTTP layer
     // reconnecting underneath us and never reaches this class at all.

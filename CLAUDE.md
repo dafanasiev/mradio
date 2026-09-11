@@ -158,6 +158,15 @@ what lets the mpv thread publish `PropertiesChanged` directly.
   flaky connection indefinitely while giving up on a dead URL in about two
   minutes. libmpv reports no HTTP status, so "temporarily down" and "gone for
   good" cannot be told apart any other way. The tests set it to 0.
+- **mpv is brought up with its config and its Lua scripts off.** `config=no`
+  keeps a stray `~/.config/mpv/mpv.conf` from silently becoming this
+  program's settings, and the `load-*`/`ytdl` block turns off the built-in
+  scripts - the OSD console, the stats overlay, the youtube-dl hook, the
+  select, positioning and context menus - which libmpv otherwise runs on a
+  thread each, for a player with no OSD, no key bindings and no video site to
+  resolve. There is no single switch for them; each has its own, and mpv
+  refuses an option it does not know, so listing one a given build lacks is
+  harmless.
 - **`block_termination_signals()` is the first line of `main()`, and has to
   stay there.** A thread inherits the signal mask of whoever created it, and a
   process-directed signal goes to any one thread that does not block it, so a
