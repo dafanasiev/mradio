@@ -22,16 +22,22 @@ sigset_t termination_signals()
 
 }  // namespace
 
+void block_termination_signals()
+{
+    sigset_t mask = termination_signals();
+    pthread_sigmask(SIG_BLOCK, &mask, nullptr);
+}
+
 SignalWaiter::SignalWaiter(std::function<void()> on_signal)
     : on_signal_(std::move(on_signal))
 {
-    sigset_t mask = termination_signals();
+    // Idempotent, and by now every other thread has been started with these
+    // signals already blocked - see block_termination_signals().
+    block_termination_signals();
 
-    // Blocked here, before any other thread exists, so every thread created
-    // later inherits the mask and only the waiter below can receive these.
-    pthread_sigmask(SIG_BLOCK, &mask, nullptr);
+    const sigset_t mask = termination_signals();
 
-    thread_ = std::thread([this, mask]() mutable {
+    thread_ = std::thread([this, mask] {
         int received = 0;
         while (sigwait(&mask, &received) == 0) {
             if (g_shutting_down.load(std::memory_order_acquire)) {

@@ -158,6 +158,15 @@ what lets the mpv thread publish `PropertiesChanged` directly.
   flaky connection indefinitely while giving up on a dead URL in about two
   minutes. libmpv reports no HTTP status, so "temporarily down" and "gone for
   good" cannot be told apart any other way. The tests set it to 0.
+- **`block_termination_signals()` is the first line of `main()`, and has to
+  stay there.** A thread inherits the signal mask of whoever created it, and a
+  process-directed signal goes to any one thread that does not block it, so a
+  single unblocked thread is enough for SIGTERM to kill the process by default
+  disposition - no unwinding, no `Bus::stop()`, exit 143. libmpv brings up
+  several threads of its own, which is how this went wrong when the blocking
+  still lived in `SignalWaiter`'s constructor: the waiter is built last, by
+  which time it was far too late. A signal arriving between the blocking and
+  the waiter is not lost, only pending.
 - `emitPropertiesChangedSignal` **throws and drops the whole batch** if any
   named property is declared `EmitsChangedSignal="false"`. For MPRIS that means
   `Position` and `CanControl` must never appear in the list.

@@ -60,8 +60,11 @@ mradio::core::StationList load_playlist()
 
 int main()
 {
-    // First, before any thread exists: the mask has to be inherited by the
-    // mpv and D-Bus threads that come later.
+    // First, before anything creates a thread: the mask has to be inherited by
+    // the mpv and D-Bus threads that come later, or one of them takes the
+    // termination signal and the process dies without unwinding.
+    mradio::app::block_termination_signals();
+
     auto bus = mradio::ipc::Bus::connect_session();
     if (!bus) {
         report("cannot reach the session bus: " + bus.error().message);
@@ -106,6 +109,8 @@ int main()
         return 1;
     }
 
+    // The signals have been blocked since the top of main; this only starts
+    // the thread that waits for them.
     const mradio::app::SignalWaiter signals{quit};
 
     if (const auto ran = (*bus)->run(); !ran) {
