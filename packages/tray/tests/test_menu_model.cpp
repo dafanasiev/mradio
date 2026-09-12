@@ -32,8 +32,8 @@ TEST_CASE("the menu is the stations, a separator, Stop and Quit", "[tray]")
     CHECK(entries[0].label == "Радио Джаз");
     CHECK(entries[1].label == "Rock FM");
     CHECK(entries[2].is_separator);
-    CHECK(entries[3].label == "Стоп");
-    CHECK(entries[4].label == "Выйти");
+    CHECK(entries[3].label == "Stop");
+    CHECK(entries[4].label == "Quit");
 }
 
 TEST_CASE("the station that is on carries the play glyph", "[tray]")

@@ -22,7 +22,7 @@ the program does not know. These two flags and `MRADIO_AUDIO_OUTPUT` are the
 whole of the program's interface to the outside; there is still no config file.
 
 Pick a station from the menu and it plays, with a `▶` in front of its name.
-The menu also has **Стоп** and **Выйти**. MPRIS, unless it was turned off, is
+The menu also has **Stop** and **Quit**. MPRIS, unless it was turned off, is
 published too, so media keys, panel applets and `playerctl` work without
 knowing anything about mradio - including the volume, which mradio itself
 offers no gesture for. The station list goes out as an MPRIS *track list*, so

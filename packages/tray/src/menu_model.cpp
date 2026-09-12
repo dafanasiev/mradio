@@ -39,8 +39,8 @@ std::vector<MenuEntry> MenuModel::entries(const std::optional<core::StationId>& 
     }
 
     result.push_back(MenuEntry{.id = separator_id_, .label = {}, .is_separator = true});
-    result.push_back(MenuEntry{.id = stop_id_, .label = "Стоп"});
-    result.push_back(MenuEntry{.id = quit_id_, .label = "Выйти"});
+    result.push_back(MenuEntry{.id = stop_id_, .label = "Stop"});
+    result.push_back(MenuEntry{.id = quit_id_, .label = "Quit"});
 
     return result;
 }
