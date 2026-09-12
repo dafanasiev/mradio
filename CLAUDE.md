@@ -3,10 +3,29 @@
 Internet radio player for Linux. No window: it lives in the system tray and is
 driven from the tray menu or over D-Bus.
 
+It has two faces, and each has a flag for the side it is not on by default:
+
+```bash
+mradio                              # MPRIS only
+mradio --with-tray                  # MPRIS and the tray icon, as the .desktop file runs it
+mradio --with-tray --without-mpris  # the tray icon alone
+mradio --help                       # the same list, on stdout
+```
+
+MPRIS costs nothing to publish and is what everything else on the desktop
+already knows how to talk to, so it stays on until `--without-mpris`. The tray
+icon is a visible thing on somebody's panel, so it waits to be asked for.
+
+One of the two has to remain: `--without-mpris` on its own leaves no way to
+pick a station or to quit, so it prints that and exits 2 - as does an argument
+the program does not know. These two flags and `MRADIO_AUDIO_OUTPUT` are the
+whole of the program's interface to the outside; there is still no config file.
+
 Pick a station from the menu and it plays, with a `▶` in front of its name.
-The menu also has **Стоп** and **Выйти**. MPRIS is published, so media keys,
-panel applets and `playerctl` work without knowing anything about mradio -
-including the volume, which mradio itself offers no gesture for.
+The menu also has **Стоп** and **Выйти**. MPRIS, unless it was turned off, is
+published too, so media keys, panel applets and `playerctl` work without
+knowing anything about mradio - including the volume, which mradio itself
+offers no gesture for.
 
 There is no configuration file and no saved state. The only thing read is
 `$XDG_CONFIG_HOME/mradio/playlist.m3u` (falling back to
@@ -81,7 +100,8 @@ explicitly; `mradio_require_xml2cpp()` fails the configure step with that
 advice if it is missing.
 
 Running it headless (no sound card) needs `MRADIO_AUDIO_OUTPUT=null`. That
-environment variable is the program's only knob.
+environment variable is the program's only knob beyond `--with-tray` and
+`--without-mpris`.
 
 ## Architecture
 
@@ -116,7 +136,7 @@ to define earlier.
 | `ipc` | session-bus connection and the I/O loop |
 | `mpris` | `org.mpris.MediaPlayer2` view |
 | `tray` | `org.kde.StatusNotifierItem` + `com.canonical.dbusmenu` view |
-| `app` | the only executable; wires everything and runs the loop |
+| `app` | the only executable; parses the two flags, wires up what they ask for and runs the loop |
 
 No GUI toolkit is linked. StatusNotifierItem and dbusmenu are pure D-Bus
 protocols, so the panel draws the icon and the menu from published properties.
@@ -147,6 +167,13 @@ what lets the mpv thread publish `PropertiesChanged` directly.
   `PlayPause` onto play-or-stop.
 - **Nothing is remembered.** Not favourites, not the last station, not the
   volume. `stop()` clears the current station outright.
+- **`--without-mpris` gives up the single-instance check too.** It was never a
+  check of its own: it is `RequestName` on `org.mpris.MediaPlayer2.mradio`
+  failing for the second copy. StatusNotifierItem needs no well-known name -
+  the watcher knows a connection by its unique name - so a tray-only instance
+  claims nothing and two of them can run. Claiming the MPRIS name anyway,
+  without publishing the object under it, would be worse: `playerctl` and the
+  panel applets would find a player that answers nothing.
 - **A drop is retried, a wrong URL is not - for long.** ffmpeg reconnects
   underneath mpv (the `stream-lavf-o` options in `MpvEngine::create`), and it
   is kept on a short leash there on purpose: its reconnecting is invisible from

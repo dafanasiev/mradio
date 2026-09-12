@@ -1,3 +1,4 @@
+#include "options.hpp"
 #include "signal_waiter.hpp"
 
 #include "mradio/audio/mpv_engine.hpp"
@@ -10,13 +11,15 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <string_view>
 
 namespace {
 
 // MPRIS requires this exact shape of name, and claiming it doubles as the
-// single-instance check: a second copy of the program cannot take it.
+// single-instance check: a second copy of the program cannot take it. It is
+// claimed only when MPRIS is actually published - see main().
 constexpr const char* kServiceName = "org.mpris.MediaPlayer2.mradio";
 
 void report(std::string_view message)
@@ -58,12 +61,34 @@ mradio::core::StationList load_playlist()
 
 }  // namespace
 
-int main()
+int main(int argc, char** argv)
 {
     // First, before anything creates a thread: the mask has to be inherited by
     // the mpv and D-Bus threads that come later, or one of them takes the
-    // termination signal and the process dies without unwinding.
+    // termination signal and the process dies without unwinding. Parsing the
+    // command line starts no threads, so it can wait its turn behind this.
     mradio::app::block_termination_signals();
+
+    const auto options = mradio::app::parse_options(argc, argv);
+    if (!options) {
+        report(options.error().message);
+        std::cerr << mradio::app::usage();
+        return 2;
+    }
+
+    if (options->help) {
+        std::cout << mradio::app::usage();
+        return 0;
+    }
+
+    // Only reachable as --without-mpris with no --with-tray: the program would
+    // then hold a playlist it cannot show, a player nothing can start and no
+    // way of being asked to quit. Saying so beats sitting there silently.
+    if (!options->tray && !options->mpris) {
+        report("nothing to control the player with: --without-mpris needs --with-tray");
+        std::cerr << mradio::app::usage();
+        return 2;
+    }
 
     auto bus = mradio::ipc::Bus::connect_session();
     if (!bus) {
@@ -71,14 +96,21 @@ int main()
         return 1;
     }
 
-    if (const auto claimed = (*bus)->request_name(kServiceName); !claimed) {
-        report("another instance is already running (" + claimed.error().message + ")");
-        return 1;
+    // Only MPRIS needs a well-known name; StatusNotifierItem identifies itself
+    // to the watcher by its unique connection name. So --without-mpris gives
+    // up the single-instance check along with the interface - claiming an
+    // MPRIS name without publishing the object behind it would leave playerctl
+    // and the panel applets talking to a player that answers nothing.
+    if (options->mpris) {
+        if (const auto claimed = (*bus)->request_name(kServiceName); !claimed) {
+            report("another instance is already running (" + claimed.error().message + ")");
+            return 1;
+        }
     }
 
     mradio::audio::MpvOptions audio_options;
 
-    // The one knob this program has. There is no config file, so an
+    // The other knob this program has. There is no config file, so an
     // environment variable is the only place to override mpv's choice of
     // audio output - needed on a headless machine, and when mpv picks a device
     // that is not the one the user wanted.
@@ -97,16 +129,27 @@ int main()
 
     const auto quit = [&bus] { (*bus)->stop(); };
 
-    auto mpris = mradio::mpris::Service::start((*bus)->connection(), view_model, quit);
-    if (!mpris) {
-        report("cannot publish the MPRIS interface: " + mpris.error().message);
-        return 1;
+    // Held as pointers because either one may not have been asked for. They
+    // are views on one view model; whichever exist see the same state.
+    std::unique_ptr<mradio::mpris::Service> mpris;
+    std::unique_ptr<mradio::tray::Icon> icon;
+
+    if (options->mpris) {
+        auto started = mradio::mpris::Service::start((*bus)->connection(), view_model, quit);
+        if (!started) {
+            report("cannot publish the MPRIS interface: " + started.error().message);
+            return 1;
+        }
+        mpris = std::move(*started);
     }
 
-    auto icon = mradio::tray::Icon::start((*bus)->connection(), view_model, quit);
-    if (!icon) {
-        report("cannot publish the tray icon: " + icon.error().message);
-        return 1;
+    if (options->tray) {
+        auto started = mradio::tray::Icon::start((*bus)->connection(), view_model, quit);
+        if (!started) {
+            report("cannot publish the tray icon: " + started.error().message);
+            return 1;
+        }
+        icon = std::move(*started);
     }
 
     // The signals have been blocked since the top of main; this only starts

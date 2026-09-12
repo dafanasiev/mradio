@@ -2,7 +2,7 @@
 Type=Application
 Name=mradio
 Comment=Internet radio in the system tray
-Exec=mradio
+Exec=mradio --with-tray
 Icon=multimedia-player
 Categories=AudioVideo;Audio;Player;
 Terminal=false
