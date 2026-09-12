@@ -5,9 +5,9 @@
 <!--
   MPRIS 2.2 introspection data for mradio, used to generate sdbus-c++ adaptors.
 
-  Source of truth: the freedesktop MPRIS specification, spec/org.mpris.MediaPlayer2.xml
-  and spec/org.mpris.MediaPlayer2.Player.xml (rendered at
-  https://specifications.freedesktop.org/mpris-spec/latest/). Names, D-Bus signatures,
+  Source of truth: the freedesktop MPRIS specification, spec/org.mpris.MediaPlayer2.xml,
+  spec/org.mpris.MediaPlayer2.Player.xml and spec/org.mpris.MediaPlayer2.TrackList.xml
+  (rendered at https://specifications.freedesktop.org/mpris-spec/latest/). Names, D-Bus signatures,
   argument directions and EmitsChangedSignal annotations below are taken verbatim from
   those files; only the tp: docstrings were dropped and mradio-specific commentary added.
 
@@ -41,7 +41,10 @@
       <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
     </property>
 
-    <!-- false: the org.mpris.MediaPlayer2.TrackList interface is not implemented. -->
+    <!--
+      true: the org.mpris.MediaPlayer2.TrackList interface below is implemented, and the
+      track list is the user's station list. It is what tells a client to go looking for it.
+    -->
     <property name="HasTrackList" type="b" access="read">
       <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
     </property>
@@ -72,7 +75,10 @@
   -->
   <interface name="org.mpris.MediaPlayer2.Player">
 
-    <!-- For mradio these step through the station list rather than through a tracklist. -->
+    <!--
+      These step through the station list - which, since the TrackList interface went in, is
+      also the track list, so they mean exactly what the spec says they mean.
+    -->
     <method name="Next"/>
     <method name="Previous"/>
 
@@ -122,7 +128,12 @@
       <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
     </property>
 
-    <!-- a{sv}: mpris:trackid (o), xesam:title, xesam:artist (as), xesam:url, ... -->
+    <!--
+      a{sv}: mpris:trackid (o), xesam:title, xesam:artist (as), xesam:url, xesam:album.
+      mpris:trackid is the station's id in the TrackList below, as the spec requires of a
+      player that has one - so it names the station, and does not change when the stream
+      moves on to the next song. TrackMetadataChanged is what says that much.
+    -->
     <property name="Metadata" type="a{sv}" access="read">
       <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
     </property>
@@ -176,6 +187,96 @@
     -->
     <property name="CanControl" type="b" access="read">
       <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="false"/>
+    </property>
+
+  </interface>
+
+  <!--
+    TrackList interface: mradio's stations, in playlist order.
+
+    The track list is fixed. The playlist is read once at startup, so no track is ever added,
+    removed or reordered and the three signals that would say so are never emitted. What does
+    change is a track's metadata, when the station that is on moves to the next song, and that
+    is what TrackMetadataChanged carries.
+
+    A track id is /org/mpris/MediaPlayer2/mradio/station/<index>. A StationId cannot be used
+    directly: it keeps the non-ASCII bytes of the station's name, and an object path may hold
+    nothing but [A-Za-z0-9_] between its slashes.
+  -->
+  <interface name="org.mpris.MediaPlayer2.TrackList">
+
+    <!--
+      Unknown ids are left out of the answer rather than answered with an empty map: there is
+      no way in the signature to say "no such track", and a{sv} without mpris:trackid in it
+      would be a worse answer than a shorter array.
+    -->
+    <method name="GetTracksMetadata">
+      <arg direction="in" name="TrackIds" type="ao"/>
+      <arg direction="out" name="Metadata" type="aa{sv}"/>
+    </method>
+
+    <!--
+      CanEditTracks is false, so per the spec these two "have no effect, and may raise a
+      NotSupported error". mradio raises it: the station list comes from playlist.m3u and is
+      not something a client can add to, and silence would look like success.
+    -->
+    <method name="AddTrack">
+      <arg direction="in" name="Uri" type="s"/>
+      <arg direction="in" name="AfterTrack" type="o"/>
+      <arg direction="in" name="SetAsCurrent" type="b"/>
+    </method>
+
+    <method name="RemoveTrack">
+      <arg direction="in" name="TrackId" type="o"/>
+    </method>
+
+    <!--
+      The one method here that does something: it starts the station the id names, which is
+      how a client picks a station over MPRIS at all. An id from anywhere else has no effect,
+      as the spec requires.
+    -->
+    <method name="GoTo">
+      <arg direction="in" name="TrackId" type="o"/>
+    </method>
+
+    <!-- Never emitted: the list is fixed for the lifetime of the process. -->
+    <signal name="TrackListReplaced">
+      <arg name="Tracks" type="ao"/>
+      <arg name="CurrentTrack" type="o"/>
+    </signal>
+
+    <!-- Never emitted: CanEditTracks is false and nothing else adds or removes a station. -->
+    <signal name="TrackAdded">
+      <arg name="Metadata" type="a{sv}"/>
+      <arg name="AfterTrack" type="o"/>
+    </signal>
+
+    <signal name="TrackRemoved">
+      <arg name="TrackId" type="o"/>
+    </signal>
+
+    <!--
+      Emitted for the station that is playing whenever the stream says it has moved on to
+      something else. This is the signal that carries a new song, since mpris:trackid now
+      stays put across one.
+    -->
+    <signal name="TrackMetadataChanged">
+      <arg name="TrackId" type="o"/>
+      <arg name="Metadata" type="a{sv}"/>
+    </signal>
+
+    <!--
+      "invalidates" as mandated by the spec: PropertiesChanged is emitted without the new
+      value, and clients are told to follow the TrackAdded/TrackRemoved/TrackListReplaced
+      signals instead. mradio never changes the list, so it never emits either.
+    -->
+    <property name="Tracks" type="ao" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="invalidates"/>
+    </property>
+
+    <!-- false: the station list is a file the user edits, not a queue a client builds. -->
+    <property name="CanEditTracks" type="b" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="true"/>
     </property>
 
   </interface>

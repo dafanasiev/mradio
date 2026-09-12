@@ -25,7 +25,14 @@ Pick a station from the menu and it plays, with a `▶` in front of its name.
 The menu also has **Стоп** and **Выйти**. MPRIS, unless it was turned off, is
 published too, so media keys, panel applets and `playerctl` work without
 knowing anything about mradio - including the volume, which mradio itself
-offers no gesture for.
+offers no gesture for. The station list goes out as an MPRIS *track list*, so
+a client can also see every station and start a particular one:
+
+```bash
+busctl --user call org.mpris.MediaPlayer2.mradio /org/mpris/MediaPlayer2 \
+    org.mpris.MediaPlayer2.TrackList GoTo o \
+    /org/mpris/MediaPlayer2/mradio/station/1
+```
 
 There is no configuration file and no saved state. The only thing read is
 `$XDG_CONFIG_HOME/mradio/playlist.m3u` (falling back to
@@ -134,7 +141,7 @@ to define earlier.
 | `audio` | `IAudioEngine` on libmpv |
 | `viewmodel` | `PlayerViewModel`: behaviour plus the observable `ViewState` |
 | `ipc` | session-bus connection and the I/O loop |
-| `mpris` | `org.mpris.MediaPlayer2` view |
+| `mpris` | `org.mpris.MediaPlayer2` view, including the `TrackList` the stations go out as |
 | `tray` | `org.kde.StatusNotifierItem` + `com.canonical.dbusmenu` view |
 | `app` | the only executable; parses the two flags, wires up what they ask for and runs the loop |
 
@@ -167,6 +174,16 @@ what lets the mpv thread publish `PropertiesChanged` directly.
   `PlayPause` onto play-or-stop.
 - **Nothing is remembered.** Not favourites, not the last station, not the
   volume. `stop()` clears the current station outright.
+- **Over MPRIS, `mpris:trackid` names the station, not the song.** The spec
+  wants the Player's `mpris:trackid` to be a track id of the TrackList, so it
+  is one: `/org/mpris/MediaPlayer2/mradio/station/<index>`, the station's place
+  in the playlist. It therefore stays put while a station plays one song after
+  another. It used to be a counter bumped on every ICY title change, which is
+  how some clients tell songs apart; `TrackMetadataChanged` carries that now,
+  and `PropertiesChanged` on `Metadata` carries the new `xesam:title` either
+  way. The index is the id because a `StationId` keeps the non-ASCII bytes of
+  the station's name and an object path may hold nothing but `[A-Za-z0-9_]`
+  between its slashes.
 - **`--without-mpris` gives up the single-instance check too.** It was never a
   check of its own: it is `RequestName` on `org.mpris.MediaPlayer2.mradio`
   failing for the second copy. StatusNotifierItem needs no well-known name -

@@ -1,13 +1,14 @@
 #include "mradio/mpris/service.hpp"
 
 #include "mradio/ipc/bus.hpp"
+#include "mradio/mpris/track_list_model.hpp"
 
 #include "mpris_adaptor.h"
 
-#include <atomic>
 #include <cstdint>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -17,19 +18,26 @@ namespace {
 
 constexpr const char* kObjectPath = "/org/mpris/MediaPlayer2";
 
-// The path MPRIS reserves for "nothing is playing".
-constexpr const char* kNoTrack = "/org/mpris/MediaPlayer2/TrackList/NoTrack";
-
 using PlayerAdaptor = org::mpris::MediaPlayer2::Player_adaptor;
+using TrackListAdaptor = org::mpris::MediaPlayer2::TrackList_adaptor;
+
+// The reserved path, as the type the adaptors want it in.
+sdbus::ObjectPath no_track()
+{
+    return sdbus::ObjectPath{std::string{TrackListModel::no_track()}};
+}
 
 // A view onto the player, in MPRIS terms.
 //
-// It reads nothing but the ViewState the view model publishes, which is why it
-// never has to look a station up or reason about playback internals.
+// What is playing it reads from the ViewState the view model publishes, so it
+// never reasons about playback internals. The station list it does read
+// directly: the track list has to describe stations nobody is listening to,
+// and a ViewState is only ever about the one that is on.
 class MprisService final
     : public Service,
       public sdbus::AdaptorInterfaces<org::mpris::MediaPlayer2_adaptor,
                                       PlayerAdaptor,
+                                      TrackListAdaptor,
                                       sdbus::Properties_adaptor>,
       public vm::IViewStateListener {
 public:
@@ -38,7 +46,8 @@ public:
                  std::function<void()> quit)
         : AdaptorInterfaces(connection, sdbus::ObjectPath{kObjectPath}),
           view_model_(view_model),
-          quit_(std::move(quit))
+          quit_(std::move(quit)),
+          tracks_(view_model.stations())
     {
         registerAdaptor();
         view_model_.add_listener(this);
@@ -52,16 +61,9 @@ public:
 
     void on_view_state_changed(const vm::ViewState& state) override
     {
-        {
-            const std::lock_guard lock{track_mutex_};
-            std::string current = state.track.display();
-            if (current != last_track_) {
-                last_track_ = std::move(current);
-                // Clients key off mpris:trackid to notice a new track, so it
-                // has to change whenever the stream's title does.
-                track_serial_.fetch_add(1);
-            }
-        }
+        // Asked before anything is emitted, because it is what remembers the
+        // station and the song this state was seen with.
+        const std::optional<sdbus::ObjectPath> changed = track_if_changed(state);
 
         // Position and CanControl are declared EmitsChangedSignal="false".
         // Naming either of them here makes sd-bus reject the entire batch, so
@@ -71,6 +73,13 @@ public:
                                         {sdbus::PropertyName{"PlaybackStatus"},
                                          sdbus::PropertyName{"Metadata"},
                                          sdbus::PropertyName{"Volume"}});
+
+            // mpris:trackid names the station now, so it no longer moves when
+            // the stream moves on to the next song. This is what says so to a
+            // client following the track list.
+            if (changed && state.station.has_value()) {
+                emitTrackMetadataChanged(*changed, metadata_for(*state.station, state));
+            }
         }
         catch (const sdbus::Error&) {
             // A dead bus must not take playback down with it.
@@ -91,7 +100,7 @@ private:
 
     bool CanQuit() override { return true; }
     bool CanRaise() override { return false; }
-    bool HasTrackList() override { return false; }
+    bool HasTrackList() override { return true; }
 
     std::string Identity() override { return "mradio"; }
     std::string DesktopEntry() override { return "mradio"; }
@@ -143,32 +152,11 @@ private:
     {
         const vm::ViewState state = view_model_.view_state();
 
-        std::map<std::string, sdbus::Variant> metadata;
-
         if (!state.station.has_value()) {
-            metadata.emplace("mpris:trackid", sdbus::Variant{sdbus::ObjectPath{kNoTrack}});
-            return metadata;
+            return no_track_metadata();
         }
 
-        metadata.emplace("mpris:trackid", sdbus::Variant{sdbus::ObjectPath{track_path()}});
-        metadata.emplace("xesam:url", sdbus::Variant{state.station_url});
-
-        // The station goes in as the album: that is the line panel applets
-        // show beneath the track, which is where a listener looks for it.
-        metadata.emplace("xesam:album", sdbus::Variant{state.station_name});
-
-        // Falls back to the station name so the applet never shows a blank
-        // line while the stream has yet to send any metadata.
-        metadata.emplace("xesam:title",
-                         sdbus::Variant{state.track.title.empty() ? state.station_name
-                                                                  : state.track.title});
-
-        if (!state.track.artist.empty()) {
-            metadata.emplace("xesam:artist",
-                             sdbus::Variant{std::vector<std::string>{state.track.artist}});
-        }
-
-        return metadata;
+        return metadata_for(*state.station, state);
     }
 
     double Volume() override { return view_model_.view_state().volume.normalised(); }
@@ -185,19 +173,158 @@ private:
     bool CanSeek() override { return false; }
     bool CanControl() override { return true; }
 
+    // ---- org.mpris.MediaPlayer2.TrackList ----
+
+    std::vector<sdbus::ObjectPath> Tracks() override
+    {
+        const std::vector<std::string> ids = tracks_.track_ids();
+
+        std::vector<sdbus::ObjectPath> paths;
+        paths.reserve(ids.size());
+        for (const std::string& id : ids) {
+            paths.emplace_back(id);
+        }
+
+        return paths;
+    }
+
+    // The playlist is a file the user edits; a client cannot add to it.
+    bool CanEditTracks() override { return false; }
+
+    std::vector<std::map<std::string, sdbus::Variant>> GetTracksMetadata(
+        const std::vector<sdbus::ObjectPath>& track_ids) override
+    {
+        const vm::ViewState state = view_model_.view_state();
+
+        std::vector<std::map<std::string, sdbus::Variant>> metadata;
+        metadata.reserve(track_ids.size());
+
+        // An id this player never handed out is left out of the answer
+        // instead of answered with an empty map: the signature has no way to
+        // say "no such track", and a{sv} without an mpris:trackid in it would
+        // be a worse answer than a shorter array.
+        for (const sdbus::ObjectPath& track_id : track_ids) {
+            if (const auto station = tracks_.station_of(track_id); station) {
+                metadata.push_back(metadata_for(*station, state));
+            }
+        }
+
+        return metadata;
+    }
+
+    // The only way to pick a particular station over MPRIS. An id from
+    // anywhere else has no effect, which is what the spec asks for.
+    void GoTo(const sdbus::ObjectPath& track_id) override
+    {
+        if (const auto station = tracks_.station_of(track_id); station) {
+            static_cast<void>(view_model_.play(*station));
+        }
+    }
+
+    // CanEditTracks is false, so the spec allows these either to do nothing or
+    // to raise NotSupported. They raise: silence here would be indistinguishable
+    // from having worked.
+    void AddTrack(const std::string& /*uri*/,
+                  const sdbus::ObjectPath& /*after_track*/,
+                  const bool& /*set_as_current*/) override
+    {
+        refuse_to_edit();
+    }
+
+    void RemoveTrack(const sdbus::ObjectPath& /*track_id*/) override { refuse_to_edit(); }
+
     // ---- helpers ----
 
-    [[nodiscard]] std::string track_path() const
+    [[noreturn]] static void refuse_to_edit()
     {
-        return std::string{"/org/mpris/MediaPlayer2/mradio/track/"}
-               + std::to_string(track_serial_.load());
+        throw sdbus::Error{sdbus::Error::Name{"org.freedesktop.DBus.Error.NotSupported"},
+                           "mradio reads its station list once at startup; "
+                           "edit playlist.m3u and restart it instead"};
+    }
+
+    static std::map<std::string, sdbus::Variant> no_track_metadata()
+    {
+        std::map<std::string, sdbus::Variant> metadata;
+        metadata.emplace("mpris:trackid", sdbus::Variant{no_track()});
+        return metadata;
+    }
+
+    // Everything MPRIS has to say about one station, for the Player's Metadata
+    // and for the track list alike.
+    //
+    // What the stream is playing right now belongs to the station that is
+    // actually on, and only to it: the rest are described by their own name
+    // and URL, which is all that is known about a station nobody is listening
+    // to.
+    [[nodiscard]] std::map<std::string, sdbus::Variant> metadata_for(
+        const core::StationId& id, const vm::ViewState& state) const
+    {
+        const core::Station* const station = view_model_.stations().find(id);
+        if (station == nullptr) {
+            return no_track_metadata();
+        }
+
+        const std::optional<std::string> track_id = tracks_.id_of(id);
+
+        std::map<std::string, sdbus::Variant> metadata;
+        metadata.emplace("mpris:trackid",
+                         sdbus::Variant{track_id ? sdbus::ObjectPath{*track_id} : no_track()});
+        metadata.emplace("xesam:url", sdbus::Variant{station->url});
+
+        // The station goes in as the album: that is the line panel applets
+        // show beneath the track, which is where a listener looks for it.
+        metadata.emplace("xesam:album", sdbus::Variant{station->name});
+
+        const bool is_current = state.station == id;
+
+        // Falls back to the station name so the applet never shows a blank
+        // line while the stream has yet to send any metadata.
+        metadata.emplace("xesam:title",
+                         sdbus::Variant{is_current && !state.track.title.empty()
+                                            ? state.track.title
+                                            : station->name});
+
+        if (is_current && !state.track.artist.empty()) {
+            metadata.emplace("xesam:artist",
+                             sdbus::Variant{std::vector<std::string>{state.track.artist}});
+        }
+
+        return metadata;
+    }
+
+    // The track id of the station that is on, but only when the track list has
+    // something new to say about it - a different station, or a new song on the
+    // one that was already playing. A volume change is not news about a track.
+    [[nodiscard]] std::optional<sdbus::ObjectPath> track_if_changed(const vm::ViewState& state)
+    {
+        const std::lock_guard lock{track_mutex_};
+
+        std::string song = state.track.display();
+        if (state.station == last_station_ && song == last_track_) {
+            return std::nullopt;
+        }
+
+        last_station_ = state.station;
+        last_track_ = std::move(song);
+
+        if (!state.station.has_value()) {
+            return std::nullopt;
+        }
+
+        const std::optional<std::string> track_id = tracks_.id_of(*state.station);
+        if (!track_id) {
+            return std::nullopt;
+        }
+
+        return sdbus::ObjectPath{*track_id};
     }
 
     vm::PlayerViewModel& view_model_;
     std::function<void()> quit_;
+    TrackListModel tracks_;
 
-    std::atomic<std::uint64_t> track_serial_{0};
     std::mutex track_mutex_;
+    std::optional<core::StationId> last_station_;
     std::string last_track_;
 };
 
