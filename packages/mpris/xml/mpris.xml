@@ -209,6 +209,12 @@
       Unknown ids are left out of the answer rather than answered with an empty map: there is
       no way in the signature to say "no such track", and a{sv} without mpris:trackid in it
       would be a worse answer than a shorter array.
+
+      One deviation from the spec, and the only one in this file: an empty TrackIds is
+      answered with every station rather than with nothing. The spec says the result is
+      "metadata of the set of tracks given as input" and says nothing at all about an empty
+      set; no client asks for no tracks expecting none back, so the empty list is spent on
+      the question a client does turn up with - what is in the playlist.
     -->
     <method name="GetTracksMetadata">
       <arg direction="in" name="TrackIds" type="ao"/>

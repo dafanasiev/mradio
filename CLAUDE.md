@@ -174,6 +174,15 @@ what lets the mpv thread publish `PropertiesChanged` directly.
   `PlayPause` onto play-or-stop.
 - **Nothing is remembered.** Not favourites, not the last station, not the
   volume. `stop()` clears the current station outright.
+- **`GetTracksMetadata` with an empty list returns every station** -
+  experimental. The one place the MPRIS surface departs from the spec, which says the result is
+  "metadata of the set of tracks given as input" and says nothing about an
+  empty set. Reading the playlist is what a client actually wants, and by the
+  letter of the spec that costs a `Tracks` read and then a second call handing
+  every id straight back. Nobody asks for no tracks expecting none, so the
+  empty list was free to spend. Do not "fix" this to match the spec without
+  replacing it with something that answers the same question - and do drop it
+  if a real client turns out to send an empty list and mean it.
 - **Over MPRIS, `mpris:trackid` names the station, not the song.** The spec
   wants the Player's `mpris:trackid` to be a track id of the TrackList, so it
   is one: `/org/mpris/MediaPlayer2/mradio/station/<index>`, the station's place

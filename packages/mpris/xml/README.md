@@ -75,11 +75,29 @@ What the interface actually does here:
 |---|---|
 | `Tracks` | every station, in playlist order |
 | `GoTo` | starts that station — the only way to pick a *particular* one over MPRIS |
-| `GetTracksMetadata` | metadata per station; ids it never handed out are left out of the array |
+| `GetTracksMetadata` | metadata per station; ids it never handed out are left out of the array, and an **empty** request is answered with every station (see below) |
 | `CanEditTracks` | `false` — the list comes from `playlist.m3u` |
 | `AddTrack`, `RemoveTrack` | raise `org.freedesktop.DBus.Error.NotSupported`, which the spec permits when `CanEditTracks` is false |
 | `TrackMetadataChanged` | emitted when the station that is on moves to a new song |
 | `TrackListReplaced`, `TrackAdded`, `TrackRemoved` | never emitted; the list is fixed |
+
+**An empty `GetTracksMetadata` returns the whole list — experimental.** This is the one place
+mradio's TrackList departs from the specification, which says the result is "metadata of the set of tracks
+given as input" and has nothing to say about an empty set. Reading the playlist is the question a
+client actually arrives with, and answering it strictly costs a `Tracks` read followed by a second
+call carrying every id straight back:
+
+```sh
+S=org.mpris.MediaPlayer2.mradio; P=/org/mpris/MediaPlayer2; I=org.mpris.MediaPlayer2.TrackList
+
+busctl --user call $S $P $I GetTracksMetadata ao 0            # every station, one call
+```
+
+Nothing is lost by it: asking for no tracks in the hope of being given none is not something a
+client does. A client that wants specific tracks passes their ids and is answered exactly as the
+specification describes. It is marked experimental and kept on that footing: should a real client
+turn out to send an empty list and mean it, this is the part that goes, and the two-call form above
+keeps working either way.
 
 **`mpris:trackid` names the station, not the song.** The specification wants the Player's
 `mpris:trackid` to be a track id of the TrackList, so it is one, and it therefore stays put while

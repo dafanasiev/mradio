@@ -195,8 +195,28 @@ private:
         const std::vector<sdbus::ObjectPath>& track_ids) override
     {
         const vm::ViewState state = view_model_.view_state();
+        const core::StationList& stations = view_model_.stations();
 
         std::vector<std::map<std::string, sdbus::Variant>> metadata;
+
+        // Experimental: asking for nothing gets everything. This is mradio's,
+        // not the spec's - the spec says the answer is "metadata of the set of
+        // tracks given as input" and stops there, having nothing to say about
+        // an empty set. Nobody asks for no tracks in the hope of being given
+        // none, so the empty list is spent on the question a client actually
+        // turns up with - what is in the playlist - which otherwise costs a
+        // read of Tracks first and a second call carrying every id back.
+        //
+        // It is here to be lived with for a while. If some client turns out to
+        // send an empty list and mean it, this is what goes.
+        if (track_ids.empty()) {
+            metadata.reserve(stations.size());
+            for (const core::Station& station : stations) {
+                metadata.push_back(metadata_for(station.id, state));
+            }
+            return metadata;
+        }
+
         metadata.reserve(track_ids.size());
 
         // An id this player never handed out is left out of the answer
