@@ -22,14 +22,14 @@ constexpr std::string_view kUncheckedGlyph = "\xE2\x98\x90 ";
 
 }  // namespace
 
-MenuModel::MenuModel(const core::StationList& stations, bool offer_sort)
+MenuModel::MenuModel(const core::StationList& stations, bool sort_by_name_visible)
     : stations_(stations),
-      by_name_(offer_sort ? stations.size() : 0),
+      by_name_(sort_by_name_visible ? stations.size() : 0),
       separator_id_(static_cast<std::int32_t>(stations.size()) + 1),
       sort_id_(separator_id_ + 1),
       stop_id_(sort_id_ + 1),
       quit_id_(stop_id_ + 1),
-      offer_sort_(offer_sort)
+      sort_by_name_visible_(sort_by_name_visible)
 {
     std::iota(by_name_.begin(), by_name_.end(), std::size_t{0});
 
@@ -60,7 +60,7 @@ std::vector<MenuEntry> MenuModel::entries(const std::optional<core::StationId>& 
 
     result.push_back(MenuEntry{.id = separator_id_, .label = {}, .is_separator = true});
 
-    if (offer_sort_) {
+    if (sort_by_name_visible_) {
         result.push_back(MenuEntry{
             .id = sort_id_,
             .label =
@@ -79,10 +79,10 @@ std::vector<MenuEntry> MenuModel::entries(const std::optional<core::StationId>& 
 
 MenuAction MenuModel::action_of(std::int32_t id) const
 {
-    // sort_id_ keeps its number even when the entry is not offered, so that
+    // sort_id_ keeps its number even when the entry is not visible, so that
     // the ids either side of it do not depend on the flag; nothing shows it,
     // and nothing acts on it.
-    if (offer_sort_ && id == sort_id_) {
+    if (sort_by_name_visible_ && id == sort_id_) {
         return MenuAction{.kind = MenuAction::Kind::toggle_sort, .station = {}};
     }
     if (id == stop_id_) {

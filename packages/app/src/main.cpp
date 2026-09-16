@@ -158,7 +158,7 @@ int main(int argc, char** argv)
         // The playlist is already in the order it was asked for, so the menu's
         // own sort entry would be a switch with nothing to switch.
         const mradio::tray::IconOptions tray_options{
-            .offer_sort_by_name = !options->sort_by_name,
+            .sort_by_name_visible = !options->sort_by_name,
         };
 
         auto started =

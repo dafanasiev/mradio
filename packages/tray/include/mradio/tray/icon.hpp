@@ -12,10 +12,10 @@ namespace mradio::tray {
 
 // How the tray comes up.
 struct IconOptions {
-    // Whether the menu carries the "Sort by name" box at all. False under
+    // Whether the "Sort by name" box is in the menu at all. False under
     // --sort-by-name, which sorted the playlist itself before this was built:
     // a box that re-sorts an already sorted list is an entry that does nothing.
-    bool offer_sort_by_name = true;
+    bool sort_by_name_visible = true;
 };
 
 // The tray icon and its menu.

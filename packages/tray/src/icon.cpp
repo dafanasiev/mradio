@@ -62,10 +62,10 @@ public:
     MenuObject(sdbus::IConnection& connection,
                vm::PlayerViewModel& view_model,
                std::function<void()> quit,
-               bool offer_sort)
+               bool sort_by_name_visible)
         : AdaptorInterfaces(connection, sdbus::ObjectPath{kMenuPath}),
           view_model_(view_model),
-          model_(view_model.stations(), offer_sort),
+          model_(view_model.stations(), sort_by_name_visible),
           quit_(std::move(quit))
     {
         registerAdaptor();
@@ -356,7 +356,7 @@ public:
              const IconOptions& options)
         : connection_(connection),
           view_model_(view_model),
-          menu_(connection, view_model, std::move(quit), options.offer_sort_by_name),
+          menu_(connection, view_model, std::move(quit), options.sort_by_name_visible),
           item_(connection, view_model),
           watcher_(connection)
     {

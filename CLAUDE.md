@@ -189,7 +189,7 @@ what lets the mpv thread publish `PropertiesChanged` directly.
   disturbed and MPRIS is untouched. Menu ids stay bound to stations rather
   than to menu positions, so a host acting on a layout it cached before the
   flip still starts the station the user picked. Under `--sort-by-name` the
-  checkbox is left out (`IconOptions::offer_sort_by_name`), because a switch
+  checkbox is left out (`IconOptions::sort_by_name_visible`), because a switch
   that re-sorts an already sorted list is an entry that does nothing.
 - **`StationList::sort_by_name()` is a startup operation.** Ids and stations
   travel together, so anything holding a `StationId` is safe, but the MPRIS

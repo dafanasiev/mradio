@@ -243,11 +243,11 @@ TEST_CASE("two stations of the same name keep their file order when sorted", "[t
 TEST_CASE("the sort entry can be left out of the menu altogether", "[tray]")
 {
     // What --sort-by-name asks for: it sorted the playlist itself, so the
-    // menu shows that order and offers no switch for it.
+    // menu shows that order and has no switch for it.
     const StationList stations = four_stations();
     const MenuModel model{stations, false};
 
-    CHECK_FALSE(model.offers_sort());
+    CHECK_FALSE(model.sort_by_name_visible());
     CHECK_FALSE(model.sorted_by_name());
 
     const std::vector<MenuEntry> entries = model.entries(std::nullopt);
