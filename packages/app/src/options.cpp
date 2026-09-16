@@ -6,7 +6,7 @@ namespace mradio::app {
 namespace {
 
 constexpr std::string_view kUsage =
-    "Usage: mradio [--with-tray] [--without-mpris]\n"
+    "Usage: mradio [--with-tray] [--without-mpris] [--sort-by-name]\n"
     "\n"
     "Internet radio player with no window of its own. It has two faces, both\n"
     "of them D-Bus services:\n"
@@ -15,6 +15,10 @@ constexpr std::string_view kUsage =
     "                   Off unless asked for.\n"
     "  --without-mpris  do not publish MPRIS - no media keys, no panel applets,\n"
     "                   no playerctl. It is published otherwise.\n"
+    "  --sort-by-name   sort the stations by name as soon as the playlist is\n"
+    "                   read, instead of keeping its order. The tray menu, the\n"
+    "                   MPRIS track list and next/previous all follow; the\n"
+    "                   menu's own \"Sort by name\" entry is left out.\n"
     "  -h, --help       print this and exit\n"
     "\n"
     "One of the two has to remain: --without-mpris on its own would leave no\n"
@@ -42,6 +46,8 @@ core::Result<Options> parse_options(int argc, const char* const* argv)
             options.tray = true;
         } else if (argument == "--without-mpris") {
             options.mpris = false;
+        } else if (argument == "--sort-by-name") {
+            options.sort_by_name = true;
         } else if (argument == "-h" || argument == "--help") {
             options.help = true;
         } else {

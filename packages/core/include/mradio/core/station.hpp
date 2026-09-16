@@ -58,11 +58,19 @@ struct Station {
     [[nodiscard]] Status validate() const;
 };
 
-// The playlist, in file order.
+// Orders two station names: case-insensitive for ASCII, plain byte order above
+// it - the same bargain StationId::from_name strikes, and for the same reason.
+// Folding case outside ASCII would need Unicode tables this program has no
+// other use for. UTF-8 bytes compare in code point order, so a Cyrillic name
+// sorts after a Latin one and Cyrillic names sort sensibly among themselves.
+[[nodiscard]] bool name_precedes(std::string_view lhs, std::string_view rhs) noexcept;
+
+// The playlist.
 //
-// Order is meaningful: it is what the tray menu shows, so it follows the file
-// rather than being sorted. Lookup by id is O(1) because the tray and the
-// D-Bus layer both resolve ids on every user action.
+// Order is meaningful - it is the order the tray menu and the MPRIS track list
+// show, and the order next() and previous() step in - so it follows the file
+// unless something asks for otherwise. Lookup by id is O(1) because the tray
+// and the D-Bus layer both resolve ids on every user action.
 class StationList {
 public:
     using const_iterator = std::vector<Station>::const_iterator;
@@ -73,13 +81,23 @@ public:
     [[nodiscard]] const Station* find(const StationId& id) const noexcept;
     [[nodiscard]] bool contains(const StationId& id) const noexcept;
 
-    // Position in file order, which is what stepping to the next or previous
+    // Position in the playlist, which is what stepping to the next or previous
     // station works on.
     [[nodiscard]] std::optional<std::size_t> index_of(const StationId& id) const noexcept;
 
     [[nodiscard]] const Station& operator[](std::size_t index) const { return stations_[index]; }
     [[nodiscard]] std::size_t size() const noexcept { return stations_.size(); }
     [[nodiscard]] bool empty() const noexcept { return stations_.empty(); }
+
+    // Reorders the playlist by station name. Ids and their stations are
+    // untouched; only their places change, so anything holding a StationId
+    // keeps meaning what it meant.
+    //
+    // Meant for startup, before anything has looked at the order: --sort-by-name
+    // calls it on the freshly loaded list. Calling it later would be sound here
+    // but not above - the MPRIS track list publishes positions, and a client
+    // holding one would be left pointing at a different station.
+    void sort_by_name();
 
     [[nodiscard]] const_iterator begin() const noexcept { return stations_.begin(); }
     [[nodiscard]] const_iterator end() const noexcept { return stations_.end(); }

@@ -61,10 +61,11 @@ class MenuObject final : public sdbus::AdaptorInterfaces<com::canonical::dbusmen
 public:
     MenuObject(sdbus::IConnection& connection,
                vm::PlayerViewModel& view_model,
-               std::function<void()> quit)
+               std::function<void()> quit,
+               bool offer_sort)
         : AdaptorInterfaces(connection, sdbus::ObjectPath{kMenuPath}),
           view_model_(view_model),
-          model_(view_model.stations()),
+          model_(view_model.stations(), offer_sort),
           quit_(std::move(quit))
     {
         registerAdaptor();
@@ -351,10 +352,11 @@ class TrayIcon final : public Icon, public vm::IViewStateListener {
 public:
     TrayIcon(sdbus::IConnection& connection,
              vm::PlayerViewModel& view_model,
-             std::function<void()> quit)
+             std::function<void()> quit,
+             const IconOptions& options)
         : connection_(connection),
           view_model_(view_model),
-          menu_(connection, view_model, std::move(quit)),
+          menu_(connection, view_model, std::move(quit), options.offer_sort_by_name),
           item_(connection, view_model),
           watcher_(connection)
     {
@@ -416,10 +418,12 @@ private:
 
 core::Result<std::unique_ptr<Icon>> Icon::start(sdbus::IConnection& connection,
                                                 vm::PlayerViewModel& view_model,
-                                                std::function<void()> quit)
+                                                std::function<void()> quit,
+                                                IconOptions options)
 {
     try {
-        return std::unique_ptr<Icon>{new TrayIcon{connection, view_model, std::move(quit)}};
+        return std::unique_ptr<Icon>{
+            new TrayIcon{connection, view_model, std::move(quit), options}};
     }
     catch (const sdbus::Error& error) {
         return std::unexpected(ipc::from_sdbus(error));

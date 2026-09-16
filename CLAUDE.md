@@ -9,6 +9,7 @@ It has two faces, and each has a flag for the side it is not on by default:
 mradio                              # MPRIS only
 mradio --with-tray                  # MPRIS and the tray icon, as the .desktop file runs it
 mradio --with-tray --without-mpris  # the tray icon alone
+mradio --sort-by-name               # stations in name order, not playlist order
 mradio --help                       # the same list, on stdout
 ```
 
@@ -18,14 +19,17 @@ icon is a visible thing on somebody's panel, so it waits to be asked for.
 
 One of the two has to remain: `--without-mpris` on its own leaves no way to
 pick a station or to quit, so it prints that and exits 2 - as does an argument
-the program does not know. These two flags and `MRADIO_AUDIO_OUTPUT` are the
-whole of the program's interface to the outside; there is still no config file.
+the program does not know. `--sort-by-name` is the third flag: it sorts the
+station list by name the moment the playlist is read, so everything downstream
+sees that order. These three flags and `MRADIO_AUDIO_OUTPUT` are the whole of
+the program's interface to the outside; there is still no config file.
 
 Pick a station from the menu and it plays, with a `▶` in front of its name.
 The menu also has **Sort by name**, **Stop** and **Quit**. Sort by name is a
 checkbox, drawn as `☑`/`☐` in its own label for the same reason the playing
 station is drawn with `▶`: one indicator, one mechanism, and nothing for the
-panel to style differently. MPRIS, unless it was turned off, is published too,
+panel to style differently. Under `--sort-by-name` the entry is not there at
+all - the list itself is sorted by then, so the box would have nothing to do. MPRIS, unless it was turned off, is published too,
 so media keys, panel applets and `playerctl` work without knowing anything
 about mradio - including the volume, which mradio itself offers no gesture
 for. The station list goes out as an MPRIS *track list*, so a client can also
@@ -175,16 +179,27 @@ what lets the mpv thread publish `PropertiesChanged` directly.
 - **No pause.** Pausing a live stream only discards buffered audio, so there is
   play and stop and nothing between. MPRIS reports `CanPause=false` and maps
   `PlayPause` onto play-or-stop.
-- **Sorting the menu sorts the menu and nothing else.** "Sort by name" lives
-  entirely in `tray::MenuModel`: the `StationList` keeps its file order, so
-  MPRIS `TrackList`, the `mpris:trackid` object paths and `next`/`previous`
-  are all untouched, and whatever is playing goes on playing. Menu ids stay
-  bound to stations rather than to menu positions, so a host acting on a
-  layout it cached before the flip still starts the station the user picked.
-  The order is case-insensitive for ASCII and byte order above it - the same
-  bargain `StationId::from_name` strikes, which puts Cyrillic names after
-  Latin ones and sorts them sensibly among themselves. The flag is not
-  persisted; nothing here is.
+- **There are two sorts, and they are deliberately different.**
+  `--sort-by-name` calls `StationList::sort_by_name()` in `main()`, on the
+  freshly read list, before a view exists: the tray menu, the MPRIS
+  `TrackList` and `next`/`previous` then all see one order and none of them
+  has to know it is not the file's. The tray's **Sort by name** checkbox is
+  the runtime one and lives entirely in `tray::MenuModel`: it reorders the
+  entries it hands back and nothing else, so nothing that is playing is
+  disturbed and MPRIS is untouched. Menu ids stay bound to stations rather
+  than to menu positions, so a host acting on a layout it cached before the
+  flip still starts the station the user picked. Under `--sort-by-name` the
+  checkbox is left out (`IconOptions::offer_sort_by_name`), because a switch
+  that re-sorts an already sorted list is an entry that does nothing.
+- **`StationList::sort_by_name()` is a startup operation.** Ids and stations
+  travel together, so anything holding a `StationId` is safe, but the MPRIS
+  track list publishes *positions*: `/…/station/<index>`. Reordering after
+  those go out leaves a client pointing at a different station, and nothing
+  emits `TrackListReplaced`. Both sorts order names case-insensitively for
+  ASCII and by byte above it - `core::name_precedes`, the same bargain
+  `StationId::from_name` strikes, which puts Cyrillic names after Latin ones
+  and sorts them sensibly among themselves. Neither sort is persisted;
+  nothing here is.
 - **Nothing is remembered.** Not favourites, not the last station, not the
   volume. `stop()` clears the current station outright.
 - **`GetTracksMetadata` with an empty list returns every station** -

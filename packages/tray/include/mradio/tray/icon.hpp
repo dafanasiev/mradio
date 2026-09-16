@@ -10,6 +10,14 @@
 
 namespace mradio::tray {
 
+// How the tray comes up.
+struct IconOptions {
+    // Whether the menu carries the "Sort by name" box at all. False under
+    // --sort-by-name, which sorted the playlist itself before this was built:
+    // a box that re-sorts an already sorted list is an entry that does nothing.
+    bool offer_sort_by_name = true;
+};
+
 // The tray icon and its menu.
 //
 // No GUI toolkit is involved. StatusNotifierItem and com.canonical.dbusmenu are
@@ -28,7 +36,8 @@ public:
     // panel does is fine.
     static core::Result<std::unique_ptr<Icon>> start(sdbus::IConnection& connection,
                                                      vm::PlayerViewModel& view_model,
-                                                     std::function<void()> quit);
+                                                     std::function<void()> quit,
+                                                     IconOptions options = {});
 
     virtual ~Icon() = default;
 

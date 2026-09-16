@@ -18,6 +18,12 @@ struct Options {
     bool mpris = true;   // --without-mpris turns this off
     bool help = false;   // -h, --help
 
+    // --sort-by-name: sort the station list by name as soon as it is read,
+    // rather than keeping the playlist's own order. It is the list itself that
+    // is sorted, so every view of it agrees; the tray's own "Sort by name"
+    // entry is then left out, having nothing left to do.
+    bool sort_by_name = false;
+
     friend bool operator==(const Options&, const Options&) = default;
 };
 

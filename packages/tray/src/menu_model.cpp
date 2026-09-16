@@ -20,40 +20,22 @@ constexpr std::string_view kPlayingGlyph = "\xE2\x96\xB6 ";
 constexpr std::string_view kCheckedGlyph = "\xE2\x98\x91 ";
 constexpr std::string_view kUncheckedGlyph = "\xE2\x98\x90 ";
 
-char lowered(char c) noexcept
-{
-    return (c >= 'A' && c <= 'Z') ? static_cast<char>(c - 'A' + 'a') : c;
-}
-
-// Case-insensitive for ASCII, plain byte order above it - the same bargain
-// StationId::from_name strikes, and for the same reason: folding case outside
-// ASCII would need Unicode tables this program has no other use for. A UTF-8
-// byte comparison is code point order, so a Cyrillic name sorts after a Latin
-// one and Cyrillic names sort sensibly among themselves.
-bool less_by_name(std::string_view lhs, std::string_view rhs) noexcept
-{
-    const auto folded = [](char c) { return static_cast<unsigned char>(lowered(c)); };
-
-    return std::lexicographical_compare(
-        lhs.begin(), lhs.end(), rhs.begin(), rhs.end(),
-        [&](char a, char b) { return folded(a) < folded(b); });
-}
-
 }  // namespace
 
-MenuModel::MenuModel(const core::StationList& stations)
+MenuModel::MenuModel(const core::StationList& stations, bool offer_sort)
     : stations_(stations),
-      by_name_(stations.size()),
+      by_name_(offer_sort ? stations.size() : 0),
       separator_id_(static_cast<std::int32_t>(stations.size()) + 1),
       sort_id_(separator_id_ + 1),
       stop_id_(sort_id_ + 1),
-      quit_id_(stop_id_ + 1)
+      quit_id_(stop_id_ + 1),
+      offer_sort_(offer_sort)
 {
     std::iota(by_name_.begin(), by_name_.end(), std::size_t{0});
 
-    // Stable, so two stations sharing a name keep their file order.
+    // Stable, so two stations sharing a name keep their playlist order.
     std::stable_sort(by_name_.begin(), by_name_.end(), [&](std::size_t a, std::size_t b) {
-        return less_by_name(stations_[a].name, stations_[b].name);
+        return core::name_precedes(stations_[a].name, stations_[b].name);
     });
 }
 
@@ -77,13 +59,18 @@ std::vector<MenuEntry> MenuModel::entries(const std::optional<core::StationId>& 
     }
 
     result.push_back(MenuEntry{.id = separator_id_, .label = {}, .is_separator = true});
-    result.push_back(MenuEntry{
-        .id = sort_id_,
-        .label = std::string{sorted_by_name_ ? kCheckedGlyph : kUncheckedGlyph} + "Sort by name",
-        .is_separator = false,
-        .is_current = false,
-        .is_checked = sorted_by_name_,
-    });
+
+    if (offer_sort_) {
+        result.push_back(MenuEntry{
+            .id = sort_id_,
+            .label =
+                std::string{sorted_by_name_ ? kCheckedGlyph : kUncheckedGlyph} + "Sort by name",
+            .is_separator = false,
+            .is_current = false,
+            .is_checked = sorted_by_name_,
+        });
+    }
+
     result.push_back(MenuEntry{.id = stop_id_, .label = "Stop"});
     result.push_back(MenuEntry{.id = quit_id_, .label = "Quit"});
 
@@ -92,7 +79,10 @@ std::vector<MenuEntry> MenuModel::entries(const std::optional<core::StationId>& 
 
 MenuAction MenuModel::action_of(std::int32_t id) const
 {
-    if (id == sort_id_) {
+    // sort_id_ keeps its number even when the entry is not offered, so that
+    // the ids either side of it do not depend on the flag; nothing shows it,
+    // and nothing acts on it.
+    if (offer_sort_ && id == sort_id_) {
         return MenuAction{.kind = MenuAction::Kind::toggle_sort, .station = {}};
     }
     if (id == stop_id_) {

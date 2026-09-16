@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -237,4 +238,46 @@ TEST_CASE("two stations of the same name keep their file order when sorted", "[t
     const std::vector<MenuEntry> entries = model.entries(std::nullopt);
     CHECK(model.action_of(entries[0].id).station.str() == "b");
     CHECK(model.action_of(entries[1].id).station.str() == "a");
+}
+
+TEST_CASE("the sort entry can be left out of the menu altogether", "[tray]")
+{
+    // What --sort-by-name asks for: it sorted the playlist itself, so the
+    // menu shows that order and offers no switch for it.
+    const StationList stations = four_stations();
+    const MenuModel model{stations, false};
+
+    CHECK_FALSE(model.offers_sort());
+    CHECK_FALSE(model.sorted_by_name());
+
+    const std::vector<MenuEntry> entries = model.entries(std::nullopt);
+
+    REQUIRE(entries.size() == 7);
+    CHECK(labels(entries, 4) ==
+          std::vector<std::string>{"zeta", "Alpha", "Радио Джаз", "beta"});
+    CHECK(entries[4].is_separator);
+    CHECK(entries[5].label == "Stop");
+    CHECK(entries[6].label == "Quit");
+
+    for (const MenuEntry& entry : entries) {
+        CHECK(entry.label.find("Sort by name") == std::string::npos);
+    }
+}
+
+TEST_CASE("with the entry gone nothing can flip the order", "[tray]")
+{
+    const StationList stations = four_stations();
+    MenuModel model{stations, false};
+
+    // The id is still spoken for, so that Stop and Quit do not move with the
+    // flag - but it stands for nothing and a host sending it gets nothing.
+    const std::vector<MenuEntry> entries = model.entries(std::nullopt);
+    const std::int32_t sort_id = entries[5].id - 1;
+    CHECK(model.action_of(sort_id).kind == MenuAction::Kind::none);
+
+    model.toggle_sort_by_name();
+
+    CHECK_FALSE(model.sorted_by_name());
+    CHECK(labels(model.entries(std::nullopt), 4) ==
+          std::vector<std::string>{"zeta", "Alpha", "Радио Джаз", "beta"});
 }

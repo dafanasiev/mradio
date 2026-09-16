@@ -103,3 +103,78 @@ TEST_CASE("an invalid station is rejected", "[station]")
     CHECK(result.error().code == Errc::invalid_argument);
     CHECK(list.empty());
 }
+
+TEST_CASE("names order case-insensitively for ASCII, by byte above it", "[station]")
+{
+    using mradio::core::name_precedes;
+
+    CHECK(name_precedes("Alpha", "beta"));
+    CHECK(name_precedes("alpha", "Beta"));
+    CHECK_FALSE(name_precedes("zeta", "Alpha"));
+
+    // Equal names precede neither way, which is what makes the sort stable.
+    CHECK_FALSE(name_precedes("Same", "same"));
+    CHECK_FALSE(name_precedes("same", "Same"));
+
+    // A prefix comes first, and UTF-8 bytes put Cyrillic after Latin.
+    CHECK(name_precedes("Jazz", "Jazz FM"));
+    CHECK(name_precedes("zeta", "Радио Джаз"));
+    CHECK(name_precedes("Радио Джаз", "Радио Рок"));
+}
+
+TEST_CASE("sorting the list moves the stations and keeps the lookups right", "[station]")
+{
+    StationList list;
+    list.add(make("zeta", "zeta")).value();
+    list.add(make("alpha", "Alpha")).value();
+    list.add(make("jazz", "Радио Джаз")).value();
+    list.add(make("beta", "beta")).value();
+
+    list.sort_by_name();
+
+    REQUIRE(list.size() == 4);
+    CHECK(list[0].name == "Alpha");
+    CHECK(list[1].name == "beta");
+    CHECK(list[2].name == "zeta");
+    CHECK(list[3].name == "Радио Джаз");
+
+    // by_id_ holds positions, so every one of them has just changed.
+    CHECK(list.index_of(StationId{"alpha"}) == 0);
+    CHECK(list.index_of(StationId{"jazz"}) == 3);
+    CHECK(list.find(StationId{"zeta"})->name == "zeta");
+    CHECK(list.contains(StationId{"beta"}));
+    CHECK(list.find(StationId{"nobody"}) == nullptr);
+}
+
+TEST_CASE("sorting is stable and an empty list survives it", "[station]")
+{
+    StationList list;
+    list.add(make("second", "Same", "http://example.org/2")).value();
+    list.add(make("first", "Same", "http://example.org/1")).value();
+
+    list.sort_by_name();
+
+    CHECK(list[0].id.str() == "second");
+    CHECK(list[1].id.str() == "first");
+
+    StationList empty;
+    empty.sort_by_name();
+    CHECK(empty.empty());
+}
+
+TEST_CASE("a sorted list still accepts stations, and still rejects duplicates", "[station]")
+{
+    StationList list;
+    list.add(make("zeta", "zeta")).value();
+    list.add(make("alpha", "Alpha")).value();
+
+    list.sort_by_name();
+
+    REQUIRE(list.add(make("mu", "Mu")));
+    CHECK_FALSE(list.add(make("zeta", "zeta again")));
+
+    // Appended, not inserted in order: sorting is a one-off, not a promise
+    // the list goes on keeping.
+    CHECK(list[2].name == "Mu");
+    CHECK(list.index_of(StationId{"mu"}) == 2);
+}

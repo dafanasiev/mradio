@@ -14,6 +14,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace {
 
@@ -125,7 +126,17 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    mradio::vm::PlayerViewModel view_model{load_playlist(), **engine};
+    mradio::core::StationList stations = load_playlist();
+
+    // Right here, on the freshly read list and before anything has looked at
+    // it: the view model, the tray menu, the MPRIS track list and next() and
+    // previous() then all see one order, and none of them has to know that it
+    // is not the file's.
+    if (options->sort_by_name) {
+        stations.sort_by_name();
+    }
+
+    mradio::vm::PlayerViewModel view_model{std::move(stations), **engine};
 
     const auto quit = [&bus] { (*bus)->stop(); };
 
@@ -144,7 +155,14 @@ int main(int argc, char** argv)
     }
 
     if (options->tray) {
-        auto started = mradio::tray::Icon::start((*bus)->connection(), view_model, quit);
+        // The playlist is already in the order it was asked for, so the menu's
+        // own sort entry would be a switch with nothing to switch.
+        const mradio::tray::IconOptions tray_options{
+            .offer_sort_by_name = !options->sort_by_name,
+        };
+
+        auto started =
+            mradio::tray::Icon::start((*bus)->connection(), view_model, quit, tray_options);
         if (!started) {
             report("cannot publish the tray icon: " + started.error().message);
             return 1;

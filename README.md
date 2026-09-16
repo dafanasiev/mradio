@@ -57,7 +57,7 @@ restart to pick changes up.
 ## Running
 
 ```
-mradio [--with-tray] [--without-mpris]
+mradio [--with-tray] [--without-mpris] [--sort-by-name]
 ```
 
 | flags | what you get |
@@ -65,6 +65,7 @@ mradio [--with-tray] [--without-mpris]
 | *none* | MPRIS only |
 | `--with-tray` | MPRIS and the tray icon |
 | `--with-tray --without-mpris` | the tray icon alone |
+| `--sort-by-name` | the stations in name order rather than playlist order |
 | `-h`, `--help` | this list, on stdout |
 
 MPRIS costs nothing to publish and is what the rest of the desktop already
@@ -73,6 +74,10 @@ tray icon is a visible thing on somebody's panel, so it waits to be asked for.
 One of the two has to remain: with neither there would be no way to pick a
 station or to quit, so mradio says so and exits 2 — as it does for an argument
 it does not know.
+
+`--sort-by-name` sorts the station list by name the moment the playlist is
+read, so everything downstream — the tray menu, the MPRIS track list, `next`
+and `previous` — sees that order instead of the file's.
 
 One environment variable, `MRADIO_AUDIO_OUTPUT`, overrides mpv's choice of
 audio output. Set it to `null` on a machine with no sound card.
@@ -93,6 +98,12 @@ The tray menu lists every station, then **Sort by name**, **Stop** and
 puts the menu in alphabetical order instead of playlist order. It is only the
 menu: nothing stops playing, and the track list MPRIS publishes stays in file
 order. It is not remembered between runs, like everything else here.
+
+To start that way, and for everything rather than just the menu, there is
+`--sort-by-name`: it sorts the station list itself as soon as the playlist is
+read, so the tray menu, the MPRIS track list and `next`/`previous` all follow.
+The menu then leaves its **Sort by name** entry out, having nothing left to
+switch.
 
 Over D-Bus, anything that speaks `org.mpris.MediaPlayer2` works without knowing
 anything about mradio — the media keys, panel applets, `playerctl`:

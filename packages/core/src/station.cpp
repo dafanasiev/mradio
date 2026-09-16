@@ -1,8 +1,21 @@
 #include "mradio/core/station.hpp"
 
+#include <algorithm>
 #include <utility>
 
 namespace mradio::core {
+
+bool name_precedes(std::string_view lhs, std::string_view rhs) noexcept
+{
+    const auto folded = [](char c) {
+        const auto ch = static_cast<unsigned char>(c);
+        return (ch >= 'A' && ch <= 'Z') ? static_cast<unsigned char>(ch - 'A' + 'a') : ch;
+    };
+
+    return std::lexicographical_compare(
+        lhs.begin(), lhs.end(), rhs.begin(), rhs.end(),
+        [&](char a, char b) { return folded(a) < folded(b); });
+}
 
 std::optional<StationId> StationId::from_name(std::string_view name)
 {
@@ -77,6 +90,19 @@ Status StationList::add(Station station)
     by_id_.emplace(std::move(key), stations_.size());
     stations_.push_back(std::move(station));
     return {};
+}
+
+void StationList::sort_by_name()
+{
+    // Stable, so two stations sharing a name keep their file order.
+    std::stable_sort(stations_.begin(), stations_.end(), [](const Station& a, const Station& b) {
+        return name_precedes(a.name, b.name);
+    });
+
+    // by_id_ maps an id to a position, and every position just moved.
+    for (std::size_t index = 0; index < stations_.size(); ++index) {
+        by_id_[stations_[index].id.str()] = index;
+    }
 }
 
 const Station* StationList::find(const StationId& id) const noexcept
