@@ -86,8 +86,13 @@ The `.desktop` file installed with mradio runs `mradio --with-tray`.
 
 ## Controlling it
 
-The tray menu lists every station, then **Stop** and **Quit**. Whichever
-station is on carries a `▶`.
+The tray menu lists every station, then **Sort by name**, **Stop** and
+**Quit**. Whichever station is on carries a `▶`.
+
+**Sort by name** is a checkbox — `☑` when it is on, `☐` when it is not — that
+puts the menu in alphabetical order instead of playlist order. It is only the
+menu: nothing stops playing, and the track list MPRIS publishes stays in file
+order. It is not remembered between runs, like everything else here.
 
 Over D-Bus, anything that speaks `org.mpris.MediaPlayer2` works without knowing
 anything about mradio — the media keys, panel applets, `playerctl`:

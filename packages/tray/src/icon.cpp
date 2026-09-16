@@ -75,7 +75,8 @@ public:
     MenuObject(const MenuObject&) = delete;
     MenuObject& operator=(const MenuObject&) = delete;
 
-    // The play glyph moved: tell the host its copy of the layout is stale.
+    // The play glyph moved, or the order did: tell the host its copy of the
+    // layout is stale.
     void refresh()
     {
         const std::uint32_t revision = revision_.fetch_add(1) + 1;
@@ -108,6 +109,12 @@ private:
                 if (quit_) {
                     quit_();
                 }
+                break;
+            case MenuAction::Kind::toggle_sort:
+                // Order is a property of this menu and of nothing else, so
+                // whatever is playing keeps playing; only the layout is stale.
+                model_.toggle_sort_by_name();
+                refresh();
                 break;
             case MenuAction::Kind::none:
                 break;

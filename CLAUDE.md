@@ -22,11 +22,14 @@ the program does not know. These two flags and `MRADIO_AUDIO_OUTPUT` are the
 whole of the program's interface to the outside; there is still no config file.
 
 Pick a station from the menu and it plays, with a `▶` in front of its name.
-The menu also has **Stop** and **Quit**. MPRIS, unless it was turned off, is
-published too, so media keys, panel applets and `playerctl` work without
-knowing anything about mradio - including the volume, which mradio itself
-offers no gesture for. The station list goes out as an MPRIS *track list*, so
-a client can also see every station and start a particular one:
+The menu also has **Sort by name**, **Stop** and **Quit**. Sort by name is a
+checkbox, drawn as `☑`/`☐` in its own label for the same reason the playing
+station is drawn with `▶`: one indicator, one mechanism, and nothing for the
+panel to style differently. MPRIS, unless it was turned off, is published too,
+so media keys, panel applets and `playerctl` work without knowing anything
+about mradio - including the volume, which mradio itself offers no gesture
+for. The station list goes out as an MPRIS *track list*, so a client can also
+see every station and start a particular one:
 
 ```bash
 busctl --user call org.mpris.MediaPlayer2.mradio /org/mpris/MediaPlayer2 \
@@ -172,6 +175,16 @@ what lets the mpv thread publish `PropertiesChanged` directly.
 - **No pause.** Pausing a live stream only discards buffered audio, so there is
   play and stop and nothing between. MPRIS reports `CanPause=false` and maps
   `PlayPause` onto play-or-stop.
+- **Sorting the menu sorts the menu and nothing else.** "Sort by name" lives
+  entirely in `tray::MenuModel`: the `StationList` keeps its file order, so
+  MPRIS `TrackList`, the `mpris:trackid` object paths and `next`/`previous`
+  are all untouched, and whatever is playing goes on playing. Menu ids stay
+  bound to stations rather than to menu positions, so a host acting on a
+  layout it cached before the flip still starts the station the user picked.
+  The order is case-insensitive for ASCII and byte order above it - the same
+  bargain `StationId::from_name` strikes, which puts Cyrillic names after
+  Latin ones and sorts them sensibly among themselves. The flag is not
+  persisted; nothing here is.
 - **Nothing is remembered.** Not favourites, not the last station, not the
   volume. `stop()` clears the current station outright.
 - **`GetTracksMetadata` with an empty list returns every station** -
